@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - LOGIXX Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 40px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            font-weight: 600;
+        }
+        
+        .header a {
+            color: white;
+            text-decoration: none;
+            opacity: 0.9;
+            font-size: 14px;
+            margin-top: 10px;
+            display: inline-block;
+        }
+        
+        .header a:hover {
+            opacity: 1;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 40px;
+        }
+        
+        .section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        
+        .section h2 {
+            font-size: 22px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #555;
+        }
+        
+        .form-group .help-text {
+            font-size: 13px;
+            color: #999;
+            margin-top: 5px;
+        }
+        
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+        
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .toggle-group {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .toggle {
+            position: relative;
+            width: 60px;
+            height: 30px;
+        }
+        
+        .toggle input {
+            display: none;
+        }
+        
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #ccc;
+            border-radius: 30px;
+            transition: 0.3s;
+        }
+        
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 4px;
+            bottom: 4px;
+            background: white;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+        
+        .toggle input:checked + .toggle-slider {
+            background: #10b981;
+        }
+        
+        .toggle input:checked + .toggle-slider:before {
+            transform: translateX(30px);
+        }
+        
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 500;
+            transition: all 0.2s;
+            width: 100%;
+        }
+        
+        .btn:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        
+        .alert {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        
+        .alert-success {
+            background: #ecfdf5;
+            color: #065f46;
+            border: 1px solid #10b981;
+        }
+        
+        .alert-error {
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #ef4444;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⚙️ Settings</h1>
+        <a href="/">← Back to Dashboard</a>
+    </div>
+    
+    <div class="container">
+        <div id="alert"></div>
+        
+        <form id="settingsForm">
+            <!-- LOGIXX Credentials -->
+            <div class="section">
+                <h2>LOGIXX Credentials</h2>
+                <div class="form-group">
+                    <label>Username/Email:</label>
+                    <input type="text" name="logixxUsername" value="<%= settings.logixxUsername %>" required>
+                </div>
+                <div class="form-group">
+                    <label>Password:</label>
+                    <input type="password" name="logixxPassword" value="<%= settings.logixxPassword %>" required>
+                    <div class="help-text">Your credentials are stored securely</div>
+                </div>
+            </div>
+            
+            <!-- Shark Tank Monitor -->
+            <div class="section">
+                <h2>Shark Tank Monitor</h2>
+                <div class="form-group">
+                    <div class="toggle-group">
+                        <label class="toggle">
+                            <input type="checkbox" name="sharkTankEnabled" 
+                                   <%= settings.sharkTankEnabled ? 'checked' : '' %>>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span>Enable Shark Tank Monitor</span>
+                    </div>
+                    <div class="help-text">Automatically finds and assigns unprotected files</div>
+                </div>
+                <div class="form-group">
+                    <label>Check Interval (minutes):</label>
+                    <input type="number" name="sharkTankInterval" 
+                           value="<%= settings.sharkTankInterval %>" 
+                           min="1" max="60" required>
+                    <div class="help-text">How often to scan for shark tank files (recommended: 5-10 minutes)</div>
+                </div>
+            </div>
+            
+            <!-- Watchlist Monitor -->
+            <div class="section">
+                <h2>Watchlist Monitor</h2>
+                <div class="form-group">
+                    <div class="toggle-group">
+                        <label class="toggle">
+                            <input type="checkbox" name="watchlistEnabled" 
+                                   <%= settings.watchlistEnabled ? 'checked' : '' %>>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span>Enable Watchlist Monitor</span>
+                    </div>
+                    <div class="help-text">Monitors specific protected files and grabs them when available</div>
+                </div>
+                <div class="form-group">
+                    <label>Check Interval (minutes):</label>
+                    <input type="number" name="watchlistInterval" 
+                           value="<%= settings.watchlistInterval %>" 
+                           min="15" max="1440" required>
+                    <div class="help-text">How often to check watchlist files (recommended: 60 minutes)</div>
+                </div>
+            </div>
+            
+            <!-- Protection Note -->
+            <div class="section">
+                <h2>Protection Note</h2>
+                <div class="form-group">
+                    <label>Note Template:</label>
+                    <textarea name="protectionNote" rows="3" required><%= settings.protectionNote %></textarea>
+                    <div class="help-text">This note will be added when auto-assigning files</div>
+                </div>
+            </div>
+            
+            <button type="submit" class="btn">Save Settings</button>
+        </form>
+    </div>
+    
+    <script>
+        document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const settings = {
+                logixxUsername: formData.get('logixxUsername'),
+                logixxPassword: formData.get('logixxPassword'),
+                sharkTankInterval: formData.get('sharkTankInterval'),
+                watchlistInterval: formData.get('watchlistInterval'),
+                protectionNote: formData.get('protectionNote'),
+                sharkTankEnabled: formData.get('sharkTankEnabled') === 'on',
+                watchlistEnabled: formData.get('watchlistEnabled') === 'on'
+            };
+            
+            try {
+                const response = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settings)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('alert').innerHTML = 
+                        '<div class="alert alert-success">✅ Settings saved successfully! Redirecting...</div>';
+                    setTimeout(() => window.location.href = '/', 1500);
+                } else {
+                    document.getElementById('alert').innerHTML = 
+                        '<div class="alert alert-error">❌ Error: ' + data.error + '</div>';
+                }
+            } catch (error) {
+                document.getElementById('alert').innerHTML = 
+                    '<div class="alert alert-error">❌ Error: ' + error.message + '</div>';
+            }
+        });
+    </script>
+</body>
+</html>
