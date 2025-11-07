@@ -174,7 +174,10 @@
 
         // Logout
         async function logout() {
-            await fetch('/api/logout', { method: 'POST' });
+            await fetch('/api/logout', { 
+                method: 'POST',
+                credentials: 'include'
+            });
             if (eventSource) eventSource.close();
             location.reload();
         }
@@ -210,6 +213,7 @@
                 const res = await fetch('/api/scraper/scrape', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
                     body: JSON.stringify({ pages })
                 });
 
@@ -250,6 +254,7 @@
                 const res = await fetch('/api/scraper/assign-leads', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
                     body: JSON.stringify({ appIds })
                 });
 
@@ -283,6 +288,7 @@
                 const res = await fetch('/api/scraper/schedule-callback', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
                     body: JSON.stringify({ appId, title, description, eventTime, duration })
                 });
 
@@ -313,6 +319,7 @@
                 const res = await fetch('/api/scraper/add-note', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
                     body: JSON.stringify({ appId, note })
                 });
 
@@ -334,7 +341,8 @@
             try {
                 const res = await fetch('/api/export-csv', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
                 });
 
                 if (res.ok) {
@@ -356,7 +364,9 @@
         // View data
         async function viewData() {
             try {
-                const res = await fetch('/api/scraper/data');
+                const res = await fetch('/api/scraper/data', {
+                    credentials: 'include'
+                });
                 const data = await res.json();
                 
                 if (data.data && data.data.length > 0) {
