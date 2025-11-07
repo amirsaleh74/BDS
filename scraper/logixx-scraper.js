@@ -63,17 +63,17 @@ class LogixxScraper {
   async login() {
     console.log('🔐 Attempting login to Logixx...');
     console.log('📧 Email:', this.email);
-    console.log('🔗 URL: https://bds.logixx.io/pipeline');
+    console.log('🔗 Going to: https://bds.logixx.io/auth/sign-in');
     
-    await this.page.goto('https://bds.logixx.io/pipeline', { waitUntil: 'networkidle', timeout: 60000 });
-    console.log('✅ Page loaded');
+    await this.page.goto('https://bds.logixx.io/auth/sign-in', { waitUntil: 'networkidle', timeout: 60000 });
+    console.log('✅ Login page loaded');
     
     // Check if already logged in
     const currentUrl = this.page.url();
     console.log('📍 Current URL:', currentUrl);
     
-    if (currentUrl.includes('/pipeline') && !currentUrl.includes('/login')) {
-      console.log('✅ Already logged in!');
+    if (currentUrl.includes('/pipeline')) {
+      console.log('✅ Already logged in! Redirected to pipeline');
       const hasTable = await this.page.$('table tbody tr');
       if (hasTable) {
         console.log('✅ Pipeline table found - login successful!');
@@ -82,46 +82,55 @@ class LogixxScraper {
     }
     
     console.log('🔍 Looking for login form...');
-    // Wait for login form
+    // Wait for login form with correct selectors
     try {
-      await this.page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 10000 });
+      await this.page.waitForSelector('input[type="text"], input[placeholder*="Username"], input[id*="5"]', { timeout: 10000 });
       console.log('✅ Login form found');
     } catch (error) {
-      console.error('❌ Login form not found! Current page:');
-      console.error('URL:', this.page.url());
-      const bodyText = await this.page.$eval('body', el => el.innerText).catch(() => 'Could not get body text');
-      console.error('Page content:', bodyText.substring(0, 500));
-      throw new Error('Login form not found - check if Logixx website structure changed');
+      console.error('❌ Login form not found!');
+      throw new Error('Login form not found at /auth/sign-in');
     }
     
-    console.log('📝 Filling email...');
-    await this.page.fill('input[type="email"], input[name="email"]', this.email);
+    console.log('📝 Filling username...');
+    // Try multiple selectors for username
+    const usernameFilled = await this.page.fill('input[type="text"], input[placeholder*="Username"]', this.email).catch(async () => {
+      console.log('Trying alternative username selector...');
+      return await this.page.fill('input[id*="5"]', this.email);
+    });
+    
     console.log('📝 Filling password...');
-    await this.page.fill('input[type="password"], input[name="password"]', this.password);
+    await this.page.waitForTimeout(500);
     
-    console.log('🖱️ Clicking login button...');
-    await this.page.click('button[type="submit"]');
+    // Try multiple selectors for password
+    await this.page.fill('input[type="password"], input[placeholder*="Password"]', this.password).catch(async () => {
+      console.log('Trying alternative password selector...');
+      return await this.page.fill('input[id*="6"]', this.password);
+    });
     
-    console.log('⏳ Waiting for navigation...');
-    // Wait for pipeline to load
+    console.log('🖱️ Clicking Sign In button...');
+    await this.page.waitForTimeout(500);
+    await this.page.click('button:has-text("Sign In"), button[type="submit"]');
+    
+    console.log('⏳ Waiting for redirect to pipeline...');
+    // Wait for redirect to pipeline
     try {
       await this.page.waitForURL('**/pipeline', { timeout: 30000 });
-      console.log('✅ Navigated to pipeline');
+      console.log('✅ Redirected to pipeline!');
     } catch (error) {
-      console.error('❌ Failed to navigate to pipeline');
+      console.error('❌ Did not redirect to pipeline');
       console.error('Current URL:', this.page.url());
-      throw new Error('Login failed - did not reach pipeline page');
-    }
-    
-    console.log('⏳ Waiting for table...');
-    try {
-      await this.page.waitForSelector('table tbody tr', { timeout: 30000 });
-      console.log('✅ Logged in successfully - table found!');
-    } catch (error) {
-      console.error('❌ Table not found after login');
-      const errorMsg = await this.page.$eval('.error, .alert', el => el.innerText).catch(() => 'No error message found');
+      const errorMsg = await this.page.$eval('.error, .alert, .message', el => el.innerText).catch(() => 'No error message found');
       console.error('Error on page:', errorMsg);
       throw new Error('Login failed - credentials may be incorrect');
+    }
+    
+    console.log('⏳ Waiting for pipeline table...');
+    try {
+      await this.page.waitForSelector('table tbody tr', { timeout: 30000 });
+      console.log('✅ Logged in successfully - pipeline loaded!');
+    } catch (error) {
+      console.error('❌ Pipeline table not found after login');
+      throw new Error('Pipeline did not load after login');
     }
   }
 
