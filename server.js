@@ -1,72 +1,17 @@
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
-const fs = require('fs');
-const LogixxScraper = require('./scraper/logixx-scraper');
 
 const app = express();
-
-// Create logs directory
-const logsDir = path.join(__dirname, 'logs');
-if (!fs.existsSync(logsDir)) {
-  fs.mkdirSync(logsDir);
-}
-
-// Logging functions
-let currentLogFile = null;
-let logBuffer = [];
-
-function startNewLog() {
-  const timestamp = new Date().toISOString().replace(/:/g, '-');
-  currentLogFile = path.join(logsDir, `scraper-${timestamp}.log`);
-  logBuffer = [];
-  const message = '=== NEW SCRAPING SESSION STARTED ===';
-  const timestamped = `[${new Date().toISOString()}] ${message}`;
-  logBuffer.push(timestamped);
-  if (currentLogFile) {
-    fs.appendFileSync(currentLogFile, timestamped + '\n');
-  }
-  const timeMessage = `Time: ${new Date().toISOString()}`;
-  const timeTimestamped = `[${new Date().toISOString()}] ${timeMessage}`;
-  logBuffer.push(timeTimestamped);
-  if (currentLogFile) {
-    fs.appendFileSync(currentLogFile, timeTimestamped + '\n');
-  }
-}
-
-function log(message) {
-  const timestamped = `[${new Date().toISOString()}] ${message}`;
-  logBuffer.push(timestamped);
-  
-  if (currentLogFile) {
-    fs.appendFileSync(currentLogFile, timestamped + '\n');
-  }
-}
-
-// Override console.log for scraper - NO RECURSION!
-const originalConsoleLog = console.log;
-const originalConsoleError = console.error;
-
-console.log = function(...args) {
-  const message = args.join(' ');
-  log(message);
-  originalConsoleLog.apply(console, args);
-};
-
-console.error = function(...args) {
-  const message = 'ERROR: ' + args.join(' ');
-  log(message);
-  originalConsoleError.apply(console, args);
-};
 
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// Session configuration
+// Session
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'change-this-to-random-string-in-production',
+  secret: process.env.SESSION_SECRET || 'change-this-secret',
   resave: false,
   saveUninitialized: false,
   cookie: { 
@@ -77,17 +22,16 @@ app.use(session({
 
 // Config
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || 'admin123';
-const LOGIXX_EMAIL = process.env.LOGIXX_EMAIL || 'aasgari@betterdebtsolutions.com';
-const LOGIXX_PASSWORD = process.env.LOGIXX_PASSWORD || 'Negin1995#';
 
 // Global state
 global.dashboardStats = {
   totalFiles: 0,
   filesAssigned: 0,
-  watchlistCount: 0,
   totalActivity: 0,
   currentStatus: 'Idle',
-  lastScrapedData: []
+  lastScrapedData: [],
+  logixxCookies: null,
+  sessionValid: false
 };
 
 let sseClients = [];
@@ -101,7 +45,6 @@ function broadcastUpdate() {
   });
 }
 
-// Auth middleware
 function requireAuth(req, res, next) {
   if (req.session.authenticated) return next();
   res.status(401).json({ error: 'Unauthorized' });
@@ -139,202 +82,117 @@ app.get('/api/live-updates', requireAuth, (req, res) => {
   });
 });
 
-// SCRAPER ENDPOINTS
-
-app.get('/api/logs/latest', requireAuth, (req, res) => {
-  if (!currentLogFile || !fs.existsSync(currentLogFile)) {
-    return res.status(404).json({ error: 'No logs available yet' });
+// Save cookies from manual login
+app.post('/api/logixx/save-cookies', requireAuth, (req, res) => {
+  const { cookies } = req.body;
+  
+  if (!cookies || !Array.isArray(cookies)) {
+    return res.status(400).json({ error: 'Invalid cookies' });
   }
   
-  const logContent = fs.readFileSync(currentLogFile, 'utf8');
-  res.json({ 
-    success: true, 
-    logs: logContent,
-    buffer: logBuffer.join('\n')
-  });
-});
-
-app.get('/api/logs/download', requireAuth, (req, res) => {
-  if (!currentLogFile || !fs.existsSync(currentLogFile)) {
-    return res.status(404).json({ error: 'No logs available yet' });
-  }
+  global.dashboardStats.logixxCookies = cookies;
+  global.dashboardStats.sessionValid = true;
+  console.log('✅ Saved', cookies.length, 'cookies');
   
-  res.download(currentLogFile, `logixx-scraper-${Date.now()}.log`);
+  broadcastUpdate();
+  res.json({ success: true, count: cookies.length });
 });
 
-app.get('/api/settings/credentials', requireAuth, (req, res) => {
+// Check session status
+app.get('/api/logixx/status', requireAuth, (req, res) => {
   res.json({
-    email: LOGIXX_EMAIL,
-    password: '***hidden***' // Never send actual password
+    hasSession: !!global.dashboardStats.logixxCookies,
+    cookieCount: global.dashboardStats.logixxCookies?.length || 0,
+    sessionValid: global.dashboardStats.sessionValid
   });
 });
 
-app.post('/api/settings/credentials', requireAuth, (req, res) => {
-  const { email, password } = req.body;
-  
-  if (email) {
-    process.env.LOGIXX_EMAIL = email;
-    log(`Credentials updated - Email: ${email}`);
-  }
-  
-  if (password) {
-    process.env.LOGIXX_PASSWORD = password;
-    log('Credentials updated - Password changed');
-  }
-  
-  res.json({ 
-    success: true, 
-    message: 'Credentials updated. Next scrape will use new credentials.' 
-  });
-});
-
+// Scrape with cookies
 app.post('/api/scraper/scrape', requireAuth, async (req, res) => {
   const { pages = 1 } = req.body;
   
-  startNewLog(); // Start new log file for this session
+  if (!global.dashboardStats.logixxCookies) {
+    return res.status(400).json({ 
+      error: 'Please login to Logixx first!' 
+    });
+  }
   
   try {
-    log(`Starting scraper for ${pages} page(s)...`);
-    log(`Using email: ${process.env.LOGIXX_EMAIL || LOGIXX_EMAIL}`);
-    
-    global.dashboardStats.currentStatus = `Starting scraper (${pages} pages)...`;
+    global.dashboardStats.currentStatus = `Starting scraper...`;
     broadcastUpdate();
     
-    const scraper = new LogixxScraper(
-      process.env.LOGIXX_EMAIL || LOGIXX_EMAIL, 
-      process.env.LOGIXX_PASSWORD || LOGIXX_PASSWORD
-    );
+    const { chromium } = require('playwright');
     
-    const results = await scraper.scrapePipeline(pages, (status, data) => {
-      global.dashboardStats.currentStatus = status;
-      if (data) global.dashboardStats.totalFiles = data.length;
+    const browser = await chromium.launch({ 
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    
+    const context = await browser.newContext();
+    await context.addCookies(global.dashboardStats.logixxCookies);
+    
+    const page = await context.newPage();
+    await page.goto('https://bds.logixx.io/pipeline', { waitUntil: 'networkidle', timeout: 30000 });
+    
+    // Check if logged in
+    if (page.url().includes('/auth/sign-in')) {
+      await browser.close();
+      global.dashboardStats.logixxCookies = null;
+      global.dashboardStats.sessionValid = false;
       broadcastUpdate();
-    });
-    
-    global.dashboardStats.lastScrapedData = results;
-    global.dashboardStats.totalFiles = results.length;
-    global.dashboardStats.currentStatus = `✅ Scraped ${results.length} leads`;
-    global.dashboardStats.totalActivity++;
-    broadcastUpdate();
-    
-    res.json({ success: true, data: results, count: results.length });
-  } catch (error) {
-    console.error('Scrape error:', error);
-    global.dashboardStats.currentStatus = `❌ ${error.message}`;
-    broadcastUpdate();
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/scraper/assign-leads', requireAuth, async (req, res) => {
-  const { appIds } = req.body;
-  
-  if (!appIds || !Array.isArray(appIds)) {
-    return res.status(400).json({ error: 'appIds array required' });
-  }
-  
-  try {
-    global.dashboardStats.currentStatus = `Assigning ${appIds.length} leads...`;
-    broadcastUpdate();
-    
-    const scraper = new LogixxScraper(LOGIXX_EMAIL, LOGIXX_PASSWORD);
-    const results = await scraper.assignLeads(appIds, (status) => {
-      global.dashboardStats.currentStatus = status;
-      broadcastUpdate();
-    });
-    
-    global.dashboardStats.filesAssigned += results.successCount;
-    global.dashboardStats.currentStatus = `✅ Assigned ${results.successCount}/${appIds.length}`;
-    global.dashboardStats.totalActivity++;
-    broadcastUpdate();
-    
-    res.json({ success: true, results });
-  } catch (error) {
-    console.error('Assign error:', error);
-    global.dashboardStats.currentStatus = `❌ ${error.message}`;
-    broadcastUpdate();
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/scraper/schedule-callback', requireAuth, async (req, res) => {
-  const { appId, title, description, eventTime, duration } = req.body;
-  
-  if (!appId || !title || !eventTime) {
-    return res.status(400).json({ error: 'appId, title, eventTime required' });
-  }
-  
-  try {
-    global.dashboardStats.currentStatus = `Scheduling callback ${appId}...`;
-    broadcastUpdate();
-    
-    const scraper = new LogixxScraper(LOGIXX_EMAIL, LOGIXX_PASSWORD);
-    await scraper.scheduleCallback({
-      appId,
-      calendar: 'Shark Tank Follow Up',
-      title,
-      description: description || 'Auto',
-      eventTime: new Date(eventTime),
-      duration: duration || '5 Minutes'
-    });
-    
-    global.dashboardStats.currentStatus = `✅ Callback scheduled ${appId}`;
-    global.dashboardStats.totalActivity++;
-    broadcastUpdate();
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Callback error:', error);
-    global.dashboardStats.currentStatus = `❌ ${error.message}`;
-    broadcastUpdate();
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/scraper/add-note', requireAuth, async (req, res) => {
-  const { appId, note } = req.body;
-  
-  if (!appId || !note) {
-    return res.status(400).json({ error: 'appId and note required' });
-  }
-  
-  try {
-    global.dashboardStats.currentStatus = `Adding note to ${appId}...`;
-    broadcastUpdate();
-    
-    const scraper = new LogixxScraper(LOGIXX_EMAIL, LOGIXX_PASSWORD);
-    await scraper.addNote(appId, note);
-    
-    global.dashboardStats.currentStatus = `✅ Note added to ${appId}`;
-    global.dashboardStats.totalActivity++;
-    broadcastUpdate();
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Note error:', error);
-    global.dashboardStats.currentStatus = `❌ ${error.message}`;
-    broadcastUpdate();
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/export-csv', requireAuth, (req, res) => {
-  try {
-    const data = global.dashboardStats.lastScrapedData;
-    
-    if (!data || data.length === 0) {
-      return res.status(400).json({ error: 'No data. Run scraper first!' });
+      return res.status(401).json({ 
+        error: 'Session expired - please login again' 
+      });
     }
     
-    const headers = Object.keys(data[0]).join(',');
-    const rows = data.map(row => 
-      Object.values(row).map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
-    ).join('\n');
+    const allData = [];
     
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename=logixx-${Date.now()}.csv`);
-    res.send(`${headers}\n${rows}`);
+    for (let pageNum = 1; pageNum <= pages; pageNum++) {
+      global.dashboardStats.currentStatus = `Scraping page ${pageNum}/${pages}...`;
+      broadcastUpdate();
+      
+      await page.waitForSelector('table tbody tr', { timeout: 10000 });
+      const rows = await page.$$('table tbody tr');
+      
+      console.log(`Page ${pageNum}: ${rows.length} rows`);
+      
+      for (const row of rows) {
+        const cells = await row.$$('td');
+        if (cells.length < 6) continue;
+        
+        const data = {
+          appId: await cells[2]?.$eval('a', el => el.textContent.trim()).catch(() => ''),
+          appDate: await cells[3]?.textContent().then(t => t.trim()).catch(() => ''),
+          firstName: await cells[4]?.textContent().then(t => t.trim()).catch(() => ''),
+          lastName: await cells[5]?.textContent().then(t => t.trim()).catch(() => ''),
+          phone: await cells[6]?.textContent().then(t => t.trim()).catch(() => '')
+        };
+        
+        if (data.appId) allData.push(data);
+      }
+      
+      if (pageNum < pages) {
+        const nextBtn = await page.$('button.btn-next:not([disabled])');
+        if (nextBtn) {
+          await nextBtn.click();
+          await page.waitForTimeout(2000);
+        } else break;
+      }
+    }
+    
+    await browser.close();
+    
+    global.dashboardStats.lastScrapedData = allData;
+    global.dashboardStats.totalFiles = allData.length;
+    global.dashboardStats.currentStatus = `✅ Scraped ${allData.length} leads`;
+    global.dashboardStats.totalActivity++;
+    broadcastUpdate();
+    
+    res.json({ success: true, data: allData, count: allData.length });
   } catch (error) {
+    console.error('Error:', error);
+    global.dashboardStats.currentStatus = `❌ ${error.message}`;
+    broadcastUpdate();
     res.status(500).json({ error: error.message });
   }
 });
@@ -346,12 +204,29 @@ app.get('/api/scraper/data', requireAuth, (req, res) => {
   });
 });
 
+app.post('/api/export-csv', requireAuth, (req, res) => {
+  const data = global.dashboardStats.lastScrapedData;
+  
+  if (!data || data.length === 0) {
+    return res.status(400).json({ error: 'No data' });
+  }
+  
+  const headers = Object.keys(data[0]).join(',');
+  const rows = data.map(row => 
+    Object.values(row).map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
+  ).join('\n');
+  
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename=logixx-${Date.now()}.csv`);
+  res.send(`${headers}\n${rows}`);
+});
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 LOGIXX Dashboard on port ${PORT}`);
+  console.log(`🚀 Server on port ${PORT}`);
   console.log(`🔐 Password: ${DASHBOARD_PASSWORD}`);
 });

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LOGIXX Dashboard - Automated Pipeline Management</title>
+    <title>LOGIXX Dashboard - Manual Login</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -11,7 +11,6 @@
     <div id="loginModal" class="modal active">
         <div class="modal-content">
             <h2>🔐 Dashboard Login</h2>
-            <p>Enter password to access</p>
             <input type="password" id="loginPassword" placeholder="Enter password">
             <button onclick="login()" class="primary">Login</button>
             <div id="loginError" class="error-msg"></div>
@@ -23,10 +22,9 @@
 
     <!-- Dashboard -->
     <div class="container" id="dashboardContent" style="display:none;">
-        <!-- Header -->
         <div class="header">
             <h1>🎯 LOGIXX Pipeline Dashboard</h1>
-            <p>Automated Scraping, Assignment & Management</p>
+            <p>Manual Login + Automated Scraping</p>
         </div>
 
         <!-- Stats -->
@@ -34,118 +32,73 @@
             <div class="stat-card">
                 <h3>Total Leads</h3>
                 <div class="number" id="totalFiles">0</div>
-                <div class="label">Scraped</div>
-            </div>
-            <div class="stat-card">
-                <h3>Assigned</h3>
-                <div class="number" id="filesAssigned">0</div>
-                <div class="label">To me</div>
             </div>
             <div class="stat-card">
                 <h3>Activity</h3>
                 <div class="number" id="totalActivity">0</div>
-                <div class="label">Actions</div>
             </div>
             <div class="stat-card">
-                <h3>Status</h3>
+                <h3>Session Status</h3>
+                <div class="status-text" id="sessionStatus">Not Logged In</div>
+            </div>
+            <div class="stat-card">
+                <h3>Scraper Status</h3>
                 <div class="status-text" id="currentStatus">Idle</div>
+            </div>
+        </div>
+
+        <!-- Manual Login Section -->
+        <div class="section" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: 2px solid #667eea;">
+            <h2 style="color: white;">🔑 Step 1: Login to Logixx</h2>
+            <p style="color: #e2e8f0; margin-bottom: 20px;">
+                You need to login to Logixx manually. Click the button below to open Logixx in a new window.
+            </p>
+            <button class="primary" onclick="openLogixxLogin()" style="font-size: 1.1em; padding: 15px 30px;">
+                🌐 Open Logixx Login Page
+            </button>
+            <div id="loginInstructions" style="display:none; margin-top: 20px; background: rgba(0,0,0,0.3); padding: 20px; border-radius: 8px;">
+                <h3 style="color: white;">📋 After you login to Logixx:</h3>
+                <ol style="color: #e2e8f0; line-height: 1.8;">
+                    <li>Press <kbd style="background: #1a202c; padding: 3px 8px; border-radius: 4px;">F12</kbd> to open Developer Tools</li>
+                    <li>Go to the <strong>Console</strong> tab</li>
+                    <li>Paste this code and press Enter:</li>
+                </ol>
+                <div style="background: #1a202c; padding: 15px; border-radius: 6px; margin: 10px 0; overflow-x: auto;">
+                    <code style="color: #48bb78; font-family: monospace; font-size: 0.9em;" id="cookieScript">
+copy(JSON.stringify(document.cookie.split('; ').map(c => {
+    const [name, value] = c.split('=');
+    return {name, value, domain: '.logixx.io', path: '/'};
+})))
+                    </code>
+                </div>
+                <ol start="4" style="color: #e2e8f0; line-height: 1.8;">
+                    <li>The cookies are now copied to your clipboard</li>
+                    <li>Come back here and paste them below:</li>
+                </ol>
+                <textarea id="cookiesInput" placeholder="Paste cookies here..." rows="4" style="width: 100%; margin: 10px 0; font-family: monospace;"></textarea>
+                <button class="success" onclick="saveCookies()" style="width: 100%;">
+                    ✅ Save Cookies & Start Scraping
+                </button>
             </div>
         </div>
 
         <!-- Scraper Section -->
         <div class="section">
-            <h2>📊 Pipeline Scraper</h2>
-            <div class="form-group">
-                <label>Number of pages to scrape (50 leads per page):</label>
-                <input type="number" id="scrapePagesInput" value="1" min="1" max="50">
+            <h2>📊 Step 2: Scrape Pipeline</h2>
+            <div id="scraperDisabled" style="padding: 15px; background: #4a5568; border-radius: 6px; margin-bottom: 15px;">
+                <p style="color: #e2e8f0; margin: 0;">⚠️ Please login to Logixx first using the button above</p>
             </div>
-            <div class="button-group">
-                <button class="primary" onclick="startScraping()">🔄 Start Scraping</button>
-                <button class="success" onclick="exportToCSV()">📥 Export to CSV</button>
-                <button class="secondary" onclick="viewData()">👁️ View Data</button>
-                <button class="secondary" onclick="viewLogs()">📋 View Logs</button>
-                <button class="secondary" onclick="downloadLogs()">⬇️ Download Logs</button>
-            </div>
-        </div>
-
-        <!-- Settings Section -->
-        <div class="section">
-            <h2>⚙️ Settings</h2>
-            <div class="form-row">
+            <div id="scraperEnabled" style="display: none;">
                 <div class="form-group">
-                    <label>Logixx Email:</label>
-                    <input type="text" id="settingsEmail" placeholder="your@email.com">
+                    <label>Number of pages (50 leads per page):</label>
+                    <input type="number" id="scrapePagesInput" value="1" min="1" max="50">
                 </div>
-                <div class="form-group">
-                    <label>Logixx Password:</label>
-                    <input type="password" id="settingsPassword" placeholder="Your password">
+                <div class="button-group">
+                    <button class="primary" onclick="startScraping()">🔄 Start Scraping</button>
+                    <button class="success" onclick="exportToCSV()">📥 Export CSV</button>
+                    <button class="secondary" onclick="viewData()">👁️ View Data</button>
                 </div>
             </div>
-            <button class="primary" onclick="updateCredentials()">💾 Update Credentials</button>
-            <p style="color: #a0aec0; margin-top: 10px; font-size: 0.9em;">
-                ⚠️ Note: Credentials are stored in memory only (not saved to database)
-            </p>
-        </div>
-
-        <!-- Bulk Assignment -->
-        <div class="section">
-            <h2>⚡ Bulk Lead Assignment</h2>
-            <p>Assign multiple leads to yourself at once</p>
-            <div class="form-group">
-                <label>Enter App IDs (comma-separated):</label>
-                <textarea id="assignAppIds" placeholder="e.g., 998815, 998742, 998740" rows="3"></textarea>
-            </div>
-            <button class="primary" onclick="assignLeads()">✅ Assign Selected Leads to Me</button>
-        </div>
-
-        <!-- Schedule Callback -->
-        <div class="section">
-            <h2>📅 Schedule Callback</h2>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>App ID:</label>
-                    <input type="text" id="callbackAppId" placeholder="e.g., 998815">
-                </div>
-                <div class="form-group">
-                    <label>Title:</label>
-                    <input type="text" id="callbackTitle" placeholder="e.g., FU">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Description:</label>
-                    <input type="text" id="callbackDescription" placeholder="Auto" value="Auto">
-                </div>
-                <div class="form-group">
-                    <label>Event Time:</label>
-                    <input type="datetime-local" id="callbackTime">
-                </div>
-            </div>
-            <div class="form-group">
-                <label>Duration:</label>
-                <select id="callbackDuration">
-                    <option value="5 Minutes" selected>5 Minutes</option>
-                    <option value="10 Minutes">10 Minutes</option>
-                    <option value="15 Minutes">15 Minutes</option>
-                    <option value="30 Minutes">30 Minutes</option>
-                    <option value="1 Hour">1 Hour</option>
-                </select>
-            </div>
-            <button class="primary" onclick="scheduleCallback()">📞 Schedule Callback</button>
-        </div>
-
-        <!-- Add Note -->
-        <div class="section">
-            <h2>📝 Add Note to Lead</h2>
-            <div class="form-group">
-                <label>App ID:</label>
-                <input type="text" id="noteAppId" placeholder="e.g., 998815">
-            </div>
-            <div class="form-group">
-                <label>Note:</label>
-                <textarea id="noteText" placeholder="Enter your note here..." rows="4"></textarea>
-            </div>
-            <button class="primary" onclick="addNote()">💬 Add Note</button>
         </div>
 
         <!-- Data Table -->
@@ -158,20 +111,13 @@
                 </table>
             </div>
         </div>
-
-        <!-- Logs Section -->
-        <div class="section" id="logsSection" style="display:none;">
-            <h2>📋 Recent Logs</h2>
-            <div style="background: #1a202c; padding: 15px; border-radius: 6px; max-height: 400px; overflow-y: auto;">
-                <pre id="logsDisplay" style="margin: 0; white-space: pre-wrap; word-wrap: break-word; font-size: 0.9em; color: #48bb78;"></pre>
-            </div>
-        </div>
     </div>
 
     <script>
         let eventSource = null;
+        let logixxWindow = null;
 
-        // Login
+        // Login to dashboard
         async function login() {
             const password = document.getElementById('loginPassword').value;
             const errorDiv = document.getElementById('loginError');
@@ -193,6 +139,7 @@
                     document.getElementById('dashboardContent').style.display = 'block';
                     document.getElementById('logoutBtn').style.display = 'block';
                     setupLiveUpdates();
+                    checkSessionStatus();
                 } else {
                     errorDiv.textContent = 'Invalid password';
                 }
@@ -203,10 +150,7 @@
 
         // Logout
         async function logout() {
-            await fetch('/api/logout', { 
-                method: 'POST',
-                credentials: 'include'
-            });
+            await fetch('/api/logout', { method: 'POST', credentials: 'include' });
             if (eventSource) eventSource.close();
             location.reload();
         }
@@ -218,15 +162,89 @@
             eventSource.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 document.getElementById('totalFiles').textContent = data.totalFiles;
-                document.getElementById('filesAssigned').textContent = data.filesAssigned;
                 document.getElementById('totalActivity').textContent = data.totalActivity;
                 document.getElementById('currentStatus').textContent = data.currentStatus;
+                
+                if (data.sessionValid) {
+                    document.getElementById('sessionStatus').textContent = '✅ Logged In';
+                    document.getElementById('sessionStatus').style.color = '#48bb78';
+                    document.getElementById('scraperDisabled').style.display = 'none';
+                    document.getElementById('scraperEnabled').style.display = 'block';
+                } else {
+                    document.getElementById('sessionStatus').textContent = '❌ Not Logged In';
+                    document.getElementById('sessionStatus').style.color = '#f56565';
+                }
             };
+        }
 
-            eventSource.onerror = () => {
-                eventSource.close();
-                setTimeout(setupLiveUpdates, 5000);
-            };
+        // Check session status
+        async function checkSessionStatus() {
+            try {
+                const res = await fetch('/api/logixx/status', { credentials: 'include' });
+                const data = await res.json();
+                
+                if (data.hasSession) {
+                    document.getElementById('scraperDisabled').style.display = 'none';
+                    document.getElementById('scraperEnabled').style.display = 'block';
+                    document.getElementById('sessionStatus').textContent = '✅ Logged In';
+                    document.getElementById('sessionStatus').style.color = '#48bb78';
+                }
+            } catch (error) {
+                console.error('Status check failed:', error);
+            }
+        }
+
+        // Open Logixx login
+        function openLogixxLogin() {
+            logixxWindow = window.open('https://bds.logixx.io/auth/sign-in', 'LogixxLogin', 'width=800,height=600');
+            document.getElementById('loginInstructions').style.display = 'block';
+            
+            // Check if window is still open
+            const checkWindow = setInterval(() => {
+                if (logixxWindow && logixxWindow.closed) {
+                    clearInterval(checkWindow);
+                    alert('Logixx window closed. Did you copy the cookies?');
+                }
+            }, 1000);
+        }
+
+        // Save cookies
+        async function saveCookies() {
+            const cookiesText = document.getElementById('cookiesInput').value.trim();
+            
+            if (!cookiesText) {
+                alert('Please paste the cookies first!');
+                return;
+            }
+
+            try {
+                const cookies = JSON.parse(cookiesText);
+                
+                if (!Array.isArray(cookies)) {
+                    throw new Error('Invalid format');
+                }
+
+                const res = await fetch('/api/logixx/save-cookies', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ cookies })
+                });
+
+                const data = await res.json();
+                
+                if (res.ok) {
+                    alert(`✅ Success! Saved ${data.count} cookies. You can now scrape!`);
+                    document.getElementById('cookiesInput').value = '';
+                    document.getElementById('scraperDisabled').style.display = 'none';
+                    document.getElementById('scraperEnabled').style.display = 'block';
+                    document.getElementById('sessionStatus').textContent = '✅ Logged In';
+                } else {
+                    alert(`❌ Error: ${data.error}`);
+                }
+            } catch (error) {
+                alert(`❌ Invalid cookies format. Make sure you pasted the output from the console.`);
+            }
         }
 
         // Start scraping
@@ -234,7 +252,7 @@
             const pages = parseInt(document.getElementById('scrapePagesInput').value);
             
             if (!pages || pages < 1) {
-                alert('Please enter valid number of pages');
+                alert('Enter valid number of pages');
                 return;
             }
 
@@ -249,116 +267,16 @@
                 const data = await res.json();
                 
                 if (res.ok) {
-                    alert(`✅ Successfully scraped ${data.count} leads!`);
+                    alert(`✅ Scraped ${data.count} leads!`);
                     displayData(data.data);
                 } else {
-                    alert(`❌ Error: ${data.error}`);
-                }
-            } catch (error) {
-                alert(`❌ Error: ${error.message}`);
-            }
-        }
-
-        // Assign leads
-        async function assignLeads() {
-            const input = document.getElementById('assignAppIds').value.trim();
-            
-            if (!input) {
-                alert('Please enter App IDs');
-                return;
-            }
-
-            const appIds = input.split(',').map(id => id.trim()).filter(id => id);
-            
-            if (appIds.length === 0) {
-                alert('No valid App IDs found');
-                return;
-            }
-
-            if (!confirm(`Assign ${appIds.length} leads to yourself?`)) {
-                return;
-            }
-
-            try {
-                const res = await fetch('/api/scraper/assign-leads', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({ appIds })
-                });
-
-                const data = await res.json();
-                
-                if (res.ok) {
-                    alert(`✅ Assigned ${data.results.successCount}/${appIds.length} leads!`);
-                    document.getElementById('assignAppIds').value = '';
-                } else {
-                    alert(`❌ Error: ${data.error}`);
-                }
-            } catch (error) {
-                alert(`❌ Error: ${error.message}`);
-            }
-        }
-
-        // Schedule callback
-        async function scheduleCallback() {
-            const appId = document.getElementById('callbackAppId').value.trim();
-            const title = document.getElementById('callbackTitle').value.trim();
-            const description = document.getElementById('callbackDescription').value.trim();
-            const eventTime = document.getElementById('callbackTime').value;
-            const duration = document.getElementById('callbackDuration').value;
-            
-            if (!appId || !title || !eventTime) {
-                alert('Please fill App ID, Title, and Event Time');
-                return;
-            }
-
-            try {
-                const res = await fetch('/api/scraper/schedule-callback', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({ appId, title, description, eventTime, duration })
-                });
-
-                if (res.ok) {
-                    alert('✅ Callback scheduled successfully!');
-                    document.getElementById('callbackAppId').value = '';
-                    document.getElementById('callbackTitle').value = '';
-                } else {
-                    const data = await res.json();
-                    alert(`❌ Error: ${data.error}`);
-                }
-            } catch (error) {
-                alert(`❌ Error: ${error.message}`);
-            }
-        }
-
-        // Add note
-        async function addNote() {
-            const appId = document.getElementById('noteAppId').value.trim();
-            const note = document.getElementById('noteText').value.trim();
-            
-            if (!appId || !note) {
-                alert('Please fill App ID and Note');
-                return;
-            }
-
-            try {
-                const res = await fetch('/api/scraper/add-note', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({ appId, note })
-                });
-
-                if (res.ok) {
-                    alert('✅ Note added successfully!');
-                    document.getElementById('noteAppId').value = '';
-                    document.getElementById('noteText').value = '';
-                } else {
-                    const data = await res.json();
-                    alert(`❌ Error: ${data.error}`);
+                    if (data.error.includes('login')) {
+                        alert('❌ Session expired! Please login to Logixx again.');
+                        document.getElementById('scraperEnabled').style.display = 'none';
+                        document.getElementById('scraperDisabled').style.display = 'block';
+                    } else {
+                        alert(`❌ Error: ${data.error}`);
+                    }
                 }
             } catch (error) {
                 alert(`❌ Error: ${error.message}`);
@@ -370,7 +288,6 @@
             try {
                 const res = await fetch('/api/export-csv', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     credentials: 'include'
                 });
 
@@ -379,7 +296,7 @@
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `logixx-export-${Date.now()}.csv`;
+                    a.download = `logixx-${Date.now()}.csv`;
                     a.click();
                 } else {
                     const data = await res.json();
@@ -393,105 +310,20 @@
         // View data
         async function viewData() {
             try {
-                const res = await fetch('/api/scraper/data', {
-                    credentials: 'include'
-                });
+                const res = await fetch('/api/scraper/data', { credentials: 'include' });
                 const data = await res.json();
                 
                 if (data.data && data.data.length > 0) {
                     displayData(data.data);
                 } else {
-                    alert('No data available. Run scraper first!');
+                    alert('No data. Run scraper first!');
                 }
             } catch (error) {
                 alert(`❌ Error: ${error.message}`);
             }
         }
 
-        // View logs
-        async function viewLogs() {
-            try {
-                const res = await fetch('/api/logs/latest', {
-                    credentials: 'include'
-                });
-                
-                if (res.ok) {
-                    const data = await res.json();
-                    const logs = data.logs || data.buffer || 'No logs available';
-                    
-                    // Show inline
-                    const logsSection = document.getElementById('logsSection');
-                    const logsDisplay = document.getElementById('logsDisplay');
-                    logsDisplay.textContent = logs;
-                    logsSection.style.display = 'block';
-                    logsSection.scrollIntoView({ behavior: 'smooth' });
-                } else {
-                    alert('❌ No logs available yet. Run scraper first!');
-                }
-            } catch (error) {
-                alert(`❌ Error: ${error.message}`);
-            }
-        }
-
-        // Download logs
-        async function downloadLogs() {
-            try {
-                const res = await fetch('/api/logs/download', {
-                    credentials: 'include'
-                });
-                
-                if (res.ok) {
-                    const blob = await res.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `logixx-scraper-${Date.now()}.log`;
-                    a.click();
-                } else {
-                    alert('❌ No logs available yet. Run scraper first!');
-                }
-            } catch (error) {
-                alert(`❌ Error: ${error.message}`);
-            }
-        }
-
-        // Update credentials
-        async function updateCredentials() {
-            const email = document.getElementById('settingsEmail').value.trim();
-            const password = document.getElementById('settingsPassword').value.trim();
-            
-            if (!email && !password) {
-                alert('Please enter at least email or password');
-                return;
-            }
-
-            if (!confirm('Update Logixx credentials? This will be used for next scrape.')) {
-                return;
-            }
-
-            try {
-                const res = await fetch('/api/settings/credentials', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({ email, password })
-                });
-
-                const data = await res.json();
-                
-                if (res.ok) {
-                    alert('✅ Credentials updated! Next scrape will use new credentials.');
-                    document.getElementById('settingsEmail').value = '';
-                    document.getElementById('settingsPassword').value = '';
-                } else {
-                    alert(`❌ Error: ${data.error}`);
-                }
-            } catch (error) {
-                alert(`❌ Error: ${error.message}`);
-            }
-        }
-
-        // Display data in table
+        // Display data
         function displayData(data) {
             if (!data || data.length === 0) return;
             
@@ -499,11 +331,9 @@
             const thead = document.getElementById('tableHead');
             const tbody = document.getElementById('tableBody');
             
-            // Build headers
             const headers = Object.keys(data[0]);
             thead.innerHTML = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
             
-            // Build rows
             tbody.innerHTML = data.map(row => 
                 '<tr>' + headers.map(h => `<td>${row[h] || ''}</td>`).join('') + '</tr>'
             ).join('');
