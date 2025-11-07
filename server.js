@@ -1,8 +1,25 @@
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
+
+// Supabase setup
+let supabase = null;
+let dbEnabled = false;
+
+if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
+  supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_KEY
+  );
+  dbEnabled = true;
+  console.log('✅ Supabase database connected');
+} else {
+  console.log('⚠️ No database configured - set SUPABASE_URL and SUPABASE_KEY');
+  console.log('   Data will be stored in memory only');
+}
 
 // Middleware
 app.use(express.json());
@@ -182,6 +199,31 @@ app.post('/api/scraper/scrape', requireAuth, async (req, res) => {
     
     await browser.close();
     
+    // Save to database if available
+    if (dbEnabled && supabase) {
+      console.log('💾 Saving to database...');
+      try {
+        const { data: insertedData, error } = await supabase
+          .from('scraped_leads')
+          .insert(allData.map(lead => ({
+            app_id: lead.appId,
+            app_date: lead.appDate,
+            first_name: lead.firstName,
+            last_name: lead.lastName,
+            phone: lead.phone,
+            scraped_at: new Date().toISOString()
+          })));
+        
+        if (error) {
+          console.error('❌ Database save error:', error.message);
+        } else {
+          console.log('✅ Saved', allData.length, 'leads to database');
+        }
+      } catch (dbError) {
+        console.error('❌ Database error:', dbError.message);
+      }
+    }
+    
     global.dashboardStats.lastScrapedData = allData;
     global.dashboardStats.totalFiles = allData.length;
     global.dashboardStats.currentStatus = `✅ Scraped ${allData.length} leads`;
@@ -197,15 +239,77 @@ app.post('/api/scraper/scrape', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/api/scraper/data', requireAuth, (req, res) => {
+app.get('/api/scraper/data', requireAuth, async (req, res) => {
+  // Try database first
+  if (dbEnabled && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('scraped_leads')
+        .select('*')
+        .order('scraped_at', { ascending: false })
+        .limit(1000);
+      
+      if (!error && data && data.length > 0) {
+        return res.json({ 
+          success: true,
+          data: data.map(row => ({
+            appId: row.app_id,
+            appDate: row.app_date,
+            firstName: row.first_name,
+            lastName: row.last_name,
+            phone: row.phone,
+            scrapedAt: row.scraped_at
+          })),
+          source: 'database',
+          count: data.length
+        });
+      }
+    } catch (error) {
+      console.error('Database query error:', error);
+    }
+  }
+  
+  // Fallback to memory
   res.json({ 
     success: true,
-    data: global.dashboardStats.lastScrapedData
+    data: global.dashboardStats.lastScrapedData,
+    source: 'memory',
+    count: global.dashboardStats.lastScrapedData.length
   });
 });
 
-app.post('/api/export-csv', requireAuth, (req, res) => {
-  const data = global.dashboardStats.lastScrapedData;
+app.post('/api/export-csv', requireAuth, async (req, res) => {
+  let data = [];
+  let source = 'memory';
+  
+  // Try database first
+  if (dbEnabled && supabase) {
+    try {
+      const { data: dbData, error } = await supabase
+        .from('scraped_leads')
+        .select('*')
+        .order('scraped_at', { ascending: false });
+      
+      if (!error && dbData && dbData.length > 0) {
+        data = dbData.map(row => ({
+          appId: row.app_id,
+          appDate: row.app_date,
+          firstName: row.first_name,
+          lastName: row.last_name,
+          phone: row.phone,
+          scrapedAt: row.scraped_at
+        }));
+        source = 'database';
+      }
+    } catch (error) {
+      console.error('Database export error:', error);
+    }
+  }
+  
+  // Fallback to memory
+  if (data.length === 0) {
+    data = global.dashboardStats.lastScrapedData;
+  }
   
   if (!data || data.length === 0) {
     return res.status(400).json({ error: 'No data' });
@@ -217,16 +321,21 @@ app.post('/api/export-csv', requireAuth, (req, res) => {
   ).join('\n');
   
   res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', `attachment; filename=logixx-${Date.now()}.csv`);
+  res.setHeader('Content-Disposition', `attachment; filename=logixx-${source}-${Date.now()}.csv`);
   res.send(`${headers}\n${rows}`);
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ 
+    status: 'ok',
+    database: dbEnabled ? 'connected' : 'not configured',
+    hasCookies: !!global.dashboardStats.logixxCookies
+  });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server on port ${PORT}`);
   console.log(`🔐 Password: ${DASHBOARD_PASSWORD}`);
+  console.log(`💾 Database: ${dbEnabled ? 'Supabase ✅' : 'Memory Only ⚠️'}`);
 });

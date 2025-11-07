@@ -1,7 +1,7 @@
 {
   "name": "logixx-manual-login-scraper",
   "version": "3.0.0",
-  "description": "Logixx Scraper with Manual Login",
+  "description": "Logixx Scraper with Manual Login + Database",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -9,7 +9,8 @@
   "dependencies": {
     "express": "^4.18.2",
     "express-session": "^1.17.3",
-    "playwright": "^1.40.0"
+    "playwright": "^1.40.0",
+    "@supabase/supabase-js": "^2.39.0"
   },
   "engines": {
     "node": ">=16.0.0"

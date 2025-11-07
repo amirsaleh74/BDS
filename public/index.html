@@ -32,6 +32,7 @@
             <div class="stat-card">
                 <h3>Total Leads</h3>
                 <div class="number" id="totalFiles">0</div>
+                <div class="label" id="dataSource">Memory</div>
             </div>
             <div class="stat-card">
                 <h3>Activity</h3>
@@ -192,6 +193,21 @@ copy(JSON.stringify(document.cookie.split('; ').map(c => {
             } catch (error) {
                 console.error('Status check failed:', error);
             }
+            
+            // Check database status
+            try {
+                const res = await fetch('/health');
+                const data = await res.json();
+                if (data.database === 'connected') {
+                    document.getElementById('dataSource').textContent = '💾 Database';
+                    document.getElementById('dataSource').style.color = '#48bb78';
+                } else {
+                    document.getElementById('dataSource').textContent = '⚠️ Memory';
+                    document.getElementById('dataSource').style.color = '#f59e0b';
+                }
+            } catch (error) {
+                console.error('Health check failed:', error);
+            }
         }
 
         // Open Logixx login
@@ -311,10 +327,12 @@ copy(JSON.stringify(document.cookie.split('; ').map(c => {
         async function viewData() {
             try {
                 const res = await fetch('/api/scraper/data', { credentials: 'include' });
-                const data = await res.json();
+                const result = await res.json();
                 
-                if (data.data && data.data.length > 0) {
-                    displayData(data.data);
+                if (result.data && result.data.length > 0) {
+                    displayData(result.data);
+                    const source = result.source === 'database' ? '💾 Database' : '⚠️ Memory';
+                    alert(`Showing ${result.count} leads from ${source}`);
                 } else {
                     alert('No data. Run scraper first!');
                 }
