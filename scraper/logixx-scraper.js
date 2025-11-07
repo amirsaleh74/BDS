@@ -9,6 +9,7 @@ class LogixxScraper {
   }
 
   async init() {
+    console.log('🚀 Initializing Playwright browser...');
     this.browser = await chromium.launch({
       headless: true,
       args: [
@@ -18,51 +19,137 @@ class LogixxScraper {
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
-        '--disable-gpu'
+        '--disable-gpu',
+        '--disable-blink-features=AutomationControlled'
       ]
     });
+    console.log('✅ Browser launched');
     
     const context = await this.browser.newContext({
       viewport: { width: 1920, height: 1080 },
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      extraHTTPHeaders: {
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
     });
+    console.log('✅ Browser context created');
     
     this.page = await context.newPage();
+    console.log('✅ New page created');
+    
+    // Add stealth scripts
+    await this.page.addInitScript(() => {
+      // Override navigator.webdriver
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined
+      });
+      
+      // Override chrome property
+      window.chrome = {
+        runtime: {}
+      };
+      
+      // Override permissions
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+          Promise.resolve({ state: Notification.permission }) :
+          originalQuery(parameters)
+      );
+    });
+    console.log('✅ Stealth scripts added');
   }
 
   async login() {
-    console.log('Logging into Logixx...');
-    await this.page.goto('https://bds.logixx.io/pipeline', { waitUntil: 'networkidle' });
+    console.log('🔐 Attempting login to Logixx...');
+    console.log('📧 Email:', this.email);
+    console.log('🔗 URL: https://bds.logixx.io/pipeline');
     
+    await this.page.goto('https://bds.logixx.io/pipeline', { waitUntil: 'networkidle', timeout: 60000 });
+    console.log('✅ Page loaded');
+    
+    // Check if already logged in
+    const currentUrl = this.page.url();
+    console.log('📍 Current URL:', currentUrl);
+    
+    if (currentUrl.includes('/pipeline') && !currentUrl.includes('/login')) {
+      console.log('✅ Already logged in!');
+      const hasTable = await this.page.$('table tbody tr');
+      if (hasTable) {
+        console.log('✅ Pipeline table found - login successful!');
+        return;
+      }
+    }
+    
+    console.log('🔍 Looking for login form...');
     // Wait for login form
-    await this.page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 30000 });
+    try {
+      await this.page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 10000 });
+      console.log('✅ Login form found');
+    } catch (error) {
+      console.error('❌ Login form not found! Current page:');
+      console.error('URL:', this.page.url());
+      const bodyText = await this.page.$eval('body', el => el.innerText).catch(() => 'Could not get body text');
+      console.error('Page content:', bodyText.substring(0, 500));
+      throw new Error('Login form not found - check if Logixx website structure changed');
+    }
     
-    // Fill login
+    console.log('📝 Filling email...');
     await this.page.fill('input[type="email"], input[name="email"]', this.email);
+    console.log('📝 Filling password...');
     await this.page.fill('input[type="password"], input[name="password"]', this.password);
     
-    // Click login button
+    console.log('🖱️ Clicking login button...');
     await this.page.click('button[type="submit"]');
     
+    console.log('⏳ Waiting for navigation...');
     // Wait for pipeline to load
-    await this.page.waitForURL('**/pipeline', { timeout: 30000 });
-    await this.page.waitForSelector('table tbody tr', { timeout: 30000 });
+    try {
+      await this.page.waitForURL('**/pipeline', { timeout: 30000 });
+      console.log('✅ Navigated to pipeline');
+    } catch (error) {
+      console.error('❌ Failed to navigate to pipeline');
+      console.error('Current URL:', this.page.url());
+      throw new Error('Login failed - did not reach pipeline page');
+    }
     
-    console.log('✅ Logged in successfully');
+    console.log('⏳ Waiting for table...');
+    try {
+      await this.page.waitForSelector('table tbody tr', { timeout: 30000 });
+      console.log('✅ Logged in successfully - table found!');
+    } catch (error) {
+      console.error('❌ Table not found after login');
+      const errorMsg = await this.page.$eval('.error, .alert', el => el.innerText).catch(() => 'No error message found');
+      console.error('Error on page:', errorMsg);
+      throw new Error('Login failed - credentials may be incorrect');
+    }
   }
 
   async scrapePipeline(numPages = 1, onProgress) {
-    if (!this.browser) await this.init();
-    await this.login();
-    
-    const allData = [];
-    
-    // Set pagination to 50 items per page
-    onProgress?.('Setting pagination to 50 items...');
-    await this.page.click('.el-pagination__sizes .el-select__wrapper');
-    await this.page.waitForTimeout(500);
-    await this.page.click('text=50/page');
-    await this.page.waitForTimeout(1000);
+    try {
+      console.log(`📊 Starting scrape for ${numPages} page(s)...`);
+      
+      if (!this.browser) {
+        await this.init();
+      }
+      
+      await this.login();
+      
+      const allData = [];
+      
+      // Set pagination to 50 items per page
+      onProgress?.('Setting pagination to 50 items...');
+      console.log('⚙️ Setting pagination to 50 items per page...');
+      
+      try {
+        await this.page.click('.el-pagination__sizes .el-select__wrapper');
+        await this.page.waitForTimeout(500);
+        await this.page.click('text=50/page');
+        await this.page.waitForTimeout(1000);
+        console.log('✅ Pagination set to 50');
+      } catch (error) {
+        console.warn('⚠️ Could not set pagination, continuing anyway:', error.message);
+      }
     
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
       onProgress?.(`Scraping page ${pageNum}/${numPages}...`, allData);
@@ -104,9 +191,18 @@ class LogixxScraper {
       }
     }
     
+    console.log(`✅ Scraping complete! Collected ${allData.length} leads`);
     await this.close();
     return allData;
+  } catch (error) {
+    console.error('❌ SCRAPING ERROR:', error);
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    await this.close();
+    throw error;
   }
+}
 
   async extractRowData(row, index) {
     try {
@@ -311,9 +407,11 @@ class LogixxScraper {
 
   async close() {
     if (this.browser) {
+      console.log('🔒 Closing browser...');
       await this.browser.close();
       this.browser = null;
       this.page = null;
+      console.log('✅ Browser closed');
     }
   }
 }
