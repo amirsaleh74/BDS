@@ -29,10 +29,10 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY package.json ./
 
 # Install Node dependencies
-RUN npm ci --only=production
+RUN npm install --production
 
 # Install Playwright browsers
 RUN npx playwright install chromium --with-deps
