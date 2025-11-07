@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOGIXX Dashboard - Automated Pipeline Management</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Login Modal -->
+    <div id="loginModal" class="modal active">
+        <div class="modal-content">
+            <h2>🔐 Dashboard Login</h2>
+            <p>Enter password to access</p>
+            <input type="password" id="loginPassword" placeholder="Enter password">
+            <button onclick="login()" class="primary">Login</button>
+            <div id="loginError" class="error-msg"></div>
+        </div>
+    </div>
+
+    <!-- Logout Button -->
+    <button id="logoutBtn" class="logout-btn" onclick="logout()" style="display:none;">Logout</button>
+
+    <!-- Dashboard -->
+    <div class="container" id="dashboardContent" style="display:none;">
+        <!-- Header -->
+        <div class="header">
+            <h1>🎯 LOGIXX Pipeline Dashboard</h1>
+            <p>Automated Scraping, Assignment & Management</p>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Total Leads</h3>
+                <div class="number" id="totalFiles">0</div>
+                <div class="label">Scraped</div>
+            </div>
+            <div class="stat-card">
+                <h3>Assigned</h3>
+                <div class="number" id="filesAssigned">0</div>
+                <div class="label">To me</div>
+            </div>
+            <div class="stat-card">
+                <h3>Activity</h3>
+                <div class="number" id="totalActivity">0</div>
+                <div class="label">Actions</div>
+            </div>
+            <div class="stat-card">
+                <h3>Status</h3>
+                <div class="status-text" id="currentStatus">Idle</div>
+            </div>
+        </div>
+
+        <!-- Scraper Section -->
+        <div class="section">
+            <h2>📊 Pipeline Scraper</h2>
+            <div class="form-group">
+                <label>Number of pages to scrape (50 leads per page):</label>
+                <input type="number" id="scrapePagesInput" value="1" min="1" max="50">
+            </div>
+            <div class="button-group">
+                <button class="primary" onclick="startScraping()">🔄 Start Scraping</button>
+                <button class="success" onclick="exportToCSV()">📥 Export to CSV</button>
+                <button class="secondary" onclick="viewData()">👁️ View Data</button>
+            </div>
+        </div>
+
+        <!-- Bulk Assignment -->
+        <div class="section">
+            <h2>⚡ Bulk Lead Assignment</h2>
+            <p>Assign multiple leads to yourself at once</p>
+            <div class="form-group">
+                <label>Enter App IDs (comma-separated):</label>
+                <textarea id="assignAppIds" placeholder="e.g., 998815, 998742, 998740" rows="3"></textarea>
+            </div>
+            <button class="primary" onclick="assignLeads()">✅ Assign Selected Leads to Me</button>
+        </div>
+
+        <!-- Schedule Callback -->
+        <div class="section">
+            <h2>📅 Schedule Callback</h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>App ID:</label>
+                    <input type="text" id="callbackAppId" placeholder="e.g., 998815">
+                </div>
+                <div class="form-group">
+                    <label>Title:</label>
+                    <input type="text" id="callbackTitle" placeholder="e.g., FU">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Description:</label>
+                    <input type="text" id="callbackDescription" placeholder="Auto" value="Auto">
+                </div>
+                <div class="form-group">
+                    <label>Event Time:</label>
+                    <input type="datetime-local" id="callbackTime">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Duration:</label>
+                <select id="callbackDuration">
+                    <option value="5 Minutes" selected>5 Minutes</option>
+                    <option value="10 Minutes">10 Minutes</option>
+                    <option value="15 Minutes">15 Minutes</option>
+                    <option value="30 Minutes">30 Minutes</option>
+                    <option value="1 Hour">1 Hour</option>
+                </select>
+            </div>
+            <button class="primary" onclick="scheduleCallback()">📞 Schedule Callback</button>
+        </div>
+
+        <!-- Add Note -->
+        <div class="section">
+            <h2>📝 Add Note to Lead</h2>
+            <div class="form-group">
+                <label>App ID:</label>
+                <input type="text" id="noteAppId" placeholder="e.g., 998815">
+            </div>
+            <div class="form-group">
+                <label>Note:</label>
+                <textarea id="noteText" placeholder="Enter your note here..." rows="4"></textarea>
+            </div>
+            <button class="primary" onclick="addNote()">💬 Add Note</button>
+        </div>
+
+        <!-- Data Table -->
+        <div class="section" id="dataSection" style="display:none;">
+            <h2>📋 Scraped Data</h2>
+            <div class="table-container">
+                <table id="dataTable">
+                    <thead id="tableHead"></thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let eventSource = null;
+
+        // Login
+        async function login() {
+            const password = document.getElementById('loginPassword').value;
+            const errorDiv = document.getElementById('loginError');
+            
+            if (!password) {
+                errorDiv.textContent = 'Please enter password';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+
+                if (res.ok) {
+                    document.getElementById('loginModal').classList.remove('active');
+                    document.getElementById('dashboardContent').style.display = 'block';
+                    document.getElementById('logoutBtn').style.display = 'block';
+                    setupLiveUpdates();
+                } else {
+                    errorDiv.textContent = 'Invalid password';
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Connection error';
+            }
+        }
+
+        // Logout
+        async function logout() {
+            await fetch('/api/logout', { method: 'POST' });
+            if (eventSource) eventSource.close();
+            location.reload();
+        }
+
+        // Live updates
+        function setupLiveUpdates() {
+            eventSource = new EventSource('/api/live-updates');
+            
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                document.getElementById('totalFiles').textContent = data.totalFiles;
+                document.getElementById('filesAssigned').textContent = data.filesAssigned;
+                document.getElementById('totalActivity').textContent = data.totalActivity;
+                document.getElementById('currentStatus').textContent = data.currentStatus;
+            };
+
+            eventSource.onerror = () => {
+                eventSource.close();
+                setTimeout(setupLiveUpdates, 5000);
+            };
+        }
+
+        // Start scraping
+        async function startScraping() {
+            const pages = parseInt(document.getElementById('scrapePagesInput').value);
+            
+            if (!pages || pages < 1) {
+                alert('Please enter valid number of pages');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/scraper/scrape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pages })
+                });
+
+                const data = await res.json();
+                
+                if (res.ok) {
+                    alert(`✅ Successfully scraped ${data.count} leads!`);
+                    displayData(data.data);
+                } else {
+                    alert(`❌ Error: ${data.error}`);
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Assign leads
+        async function assignLeads() {
+            const input = document.getElementById('assignAppIds').value.trim();
+            
+            if (!input) {
+                alert('Please enter App IDs');
+                return;
+            }
+
+            const appIds = input.split(',').map(id => id.trim()).filter(id => id);
+            
+            if (appIds.length === 0) {
+                alert('No valid App IDs found');
+                return;
+            }
+
+            if (!confirm(`Assign ${appIds.length} leads to yourself?`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/scraper/assign-leads', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ appIds })
+                });
+
+                const data = await res.json();
+                
+                if (res.ok) {
+                    alert(`✅ Assigned ${data.results.successCount}/${appIds.length} leads!`);
+                    document.getElementById('assignAppIds').value = '';
+                } else {
+                    alert(`❌ Error: ${data.error}`);
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Schedule callback
+        async function scheduleCallback() {
+            const appId = document.getElementById('callbackAppId').value.trim();
+            const title = document.getElementById('callbackTitle').value.trim();
+            const description = document.getElementById('callbackDescription').value.trim();
+            const eventTime = document.getElementById('callbackTime').value;
+            const duration = document.getElementById('callbackDuration').value;
+            
+            if (!appId || !title || !eventTime) {
+                alert('Please fill App ID, Title, and Event Time');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/scraper/schedule-callback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ appId, title, description, eventTime, duration })
+                });
+
+                if (res.ok) {
+                    alert('✅ Callback scheduled successfully!');
+                    document.getElementById('callbackAppId').value = '';
+                    document.getElementById('callbackTitle').value = '';
+                } else {
+                    const data = await res.json();
+                    alert(`❌ Error: ${data.error}`);
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Add note
+        async function addNote() {
+            const appId = document.getElementById('noteAppId').value.trim();
+            const note = document.getElementById('noteText').value.trim();
+            
+            if (!appId || !note) {
+                alert('Please fill App ID and Note');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/scraper/add-note', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ appId, note })
+                });
+
+                if (res.ok) {
+                    alert('✅ Note added successfully!');
+                    document.getElementById('noteAppId').value = '';
+                    document.getElementById('noteText').value = '';
+                } else {
+                    const data = await res.json();
+                    alert(`❌ Error: ${data.error}`);
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Export CSV
+        async function exportToCSV() {
+            try {
+                const res = await fetch('/api/export-csv', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (res.ok) {
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `logixx-export-${Date.now()}.csv`;
+                    a.click();
+                } else {
+                    const data = await res.json();
+                    alert(`❌ ${data.error}`);
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // View data
+        async function viewData() {
+            try {
+                const res = await fetch('/api/scraper/data');
+                const data = await res.json();
+                
+                if (data.data && data.data.length > 0) {
+                    displayData(data.data);
+                } else {
+                    alert('No data available. Run scraper first!');
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Display data in table
+        function displayData(data) {
+            if (!data || data.length === 0) return;
+            
+            const section = document.getElementById('dataSection');
+            const thead = document.getElementById('tableHead');
+            const tbody = document.getElementById('tableBody');
+            
+            // Build headers
+            const headers = Object.keys(data[0]);
+            thead.innerHTML = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+            
+            // Build rows
+            tbody.innerHTML = data.map(row => 
+                '<tr>' + headers.map(h => `<td>${row[h] || ''}</td>`).join('') + '</tr>'
+            ).join('');
+            
+            section.style.display = 'block';
+            section.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Enter to login
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('loginPassword').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') login();
+            });
+        });
+    </script>
+</body>
+</html>
