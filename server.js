@@ -20,13 +20,22 @@ function startNewLog() {
   const timestamp = new Date().toISOString().replace(/:/g, '-');
   currentLogFile = path.join(logsDir, `scraper-${timestamp}.log`);
   logBuffer = [];
-  log('=== NEW SCRAPING SESSION STARTED ===');
-  log(`Time: ${new Date().toISOString()}`);
+  const message = '=== NEW SCRAPING SESSION STARTED ===';
+  const timestamped = `[${new Date().toISOString()}] ${message}`;
+  logBuffer.push(timestamped);
+  if (currentLogFile) {
+    fs.appendFileSync(currentLogFile, timestamped + '\n');
+  }
+  const timeMessage = `Time: ${new Date().toISOString()}`;
+  const timeTimestamped = `[${new Date().toISOString()}] ${timeMessage}`;
+  logBuffer.push(timeTimestamped);
+  if (currentLogFile) {
+    fs.appendFileSync(currentLogFile, timeTimestamped + '\n');
+  }
 }
 
 function log(message) {
   const timestamped = `[${new Date().toISOString()}] ${message}`;
-  console.log(message); // Still log to console
   logBuffer.push(timestamped);
   
   if (currentLogFile) {
@@ -34,7 +43,7 @@ function log(message) {
   }
 }
 
-// Override console.log for scraper
+// Override console.log for scraper - NO RECURSION!
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
 
