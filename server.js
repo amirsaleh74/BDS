@@ -1,9 +1,54 @@
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
+const fs = require('fs');
 const LogixxScraper = require('./scraper/logixx-scraper');
 
 const app = express();
+
+// Create logs directory
+const logsDir = path.join(__dirname, 'logs');
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir);
+}
+
+// Logging functions
+let currentLogFile = null;
+let logBuffer = [];
+
+function startNewLog() {
+  const timestamp = new Date().toISOString().replace(/:/g, '-');
+  currentLogFile = path.join(logsDir, `scraper-${timestamp}.log`);
+  logBuffer = [];
+  log('=== NEW SCRAPING SESSION STARTED ===');
+  log(`Time: ${new Date().toISOString()}`);
+}
+
+function log(message) {
+  const timestamped = `[${new Date().toISOString()}] ${message}`;
+  console.log(message); // Still log to console
+  logBuffer.push(timestamped);
+  
+  if (currentLogFile) {
+    fs.appendFileSync(currentLogFile, timestamped + '\n');
+  }
+}
+
+// Override console.log for scraper
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+
+console.log = function(...args) {
+  const message = args.join(' ');
+  log(message);
+  originalConsoleLog.apply(console, args);
+};
+
+console.error = function(...args) {
+  const message = 'ERROR: ' + args.join(' ');
+  log(message);
+  originalConsoleError.apply(console, args);
+};
 
 // Middleware
 app.use(express.json());
@@ -87,14 +132,69 @@ app.get('/api/live-updates', requireAuth, (req, res) => {
 
 // SCRAPER ENDPOINTS
 
+app.get('/api/logs/latest', requireAuth, (req, res) => {
+  if (!currentLogFile || !fs.existsSync(currentLogFile)) {
+    return res.status(404).json({ error: 'No logs available yet' });
+  }
+  
+  const logContent = fs.readFileSync(currentLogFile, 'utf8');
+  res.json({ 
+    success: true, 
+    logs: logContent,
+    buffer: logBuffer.join('\n')
+  });
+});
+
+app.get('/api/logs/download', requireAuth, (req, res) => {
+  if (!currentLogFile || !fs.existsSync(currentLogFile)) {
+    return res.status(404).json({ error: 'No logs available yet' });
+  }
+  
+  res.download(currentLogFile, `logixx-scraper-${Date.now()}.log`);
+});
+
+app.get('/api/settings/credentials', requireAuth, (req, res) => {
+  res.json({
+    email: LOGIXX_EMAIL,
+    password: '***hidden***' // Never send actual password
+  });
+});
+
+app.post('/api/settings/credentials', requireAuth, (req, res) => {
+  const { email, password } = req.body;
+  
+  if (email) {
+    process.env.LOGIXX_EMAIL = email;
+    log(`Credentials updated - Email: ${email}`);
+  }
+  
+  if (password) {
+    process.env.LOGIXX_PASSWORD = password;
+    log('Credentials updated - Password changed');
+  }
+  
+  res.json({ 
+    success: true, 
+    message: 'Credentials updated. Next scrape will use new credentials.' 
+  });
+});
+
 app.post('/api/scraper/scrape', requireAuth, async (req, res) => {
   const { pages = 1 } = req.body;
   
+  startNewLog(); // Start new log file for this session
+  
   try {
+    log(`Starting scraper for ${pages} page(s)...`);
+    log(`Using email: ${process.env.LOGIXX_EMAIL || LOGIXX_EMAIL}`);
+    
     global.dashboardStats.currentStatus = `Starting scraper (${pages} pages)...`;
     broadcastUpdate();
     
-    const scraper = new LogixxScraper(LOGIXX_EMAIL, LOGIXX_PASSWORD);
+    const scraper = new LogixxScraper(
+      process.env.LOGIXX_EMAIL || LOGIXX_EMAIL, 
+      process.env.LOGIXX_PASSWORD || LOGIXX_PASSWORD
+    );
     
     const results = await scraper.scrapePipeline(pages, (status, data) => {
       global.dashboardStats.currentStatus = status;

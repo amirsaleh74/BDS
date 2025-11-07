@@ -63,7 +63,28 @@
                 <button class="primary" onclick="startScraping()">🔄 Start Scraping</button>
                 <button class="success" onclick="exportToCSV()">📥 Export to CSV</button>
                 <button class="secondary" onclick="viewData()">👁️ View Data</button>
+                <button class="secondary" onclick="viewLogs()">📋 View Logs</button>
+                <button class="secondary" onclick="downloadLogs()">⬇️ Download Logs</button>
             </div>
+        </div>
+
+        <!-- Settings Section -->
+        <div class="section">
+            <h2>⚙️ Settings</h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Logixx Email:</label>
+                    <input type="text" id="settingsEmail" placeholder="your@email.com">
+                </div>
+                <div class="form-group">
+                    <label>Logixx Password:</label>
+                    <input type="password" id="settingsPassword" placeholder="Your password">
+                </div>
+            </div>
+            <button class="primary" onclick="updateCredentials()">💾 Update Credentials</button>
+            <p style="color: #a0aec0; margin-top: 10px; font-size: 0.9em;">
+                ⚠️ Note: Credentials are stored in memory only (not saved to database)
+            </p>
         </div>
 
         <!-- Bulk Assignment -->
@@ -135,6 +156,14 @@
                     <thead id="tableHead"></thead>
                     <tbody id="tableBody"></tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- Logs Section -->
+        <div class="section" id="logsSection" style="display:none;">
+            <h2>📋 Recent Logs</h2>
+            <div style="background: #1a202c; padding: 15px; border-radius: 6px; max-height: 400px; overflow-y: auto;">
+                <pre id="logsDisplay" style="margin: 0; white-space: pre-wrap; word-wrap: break-word; font-size: 0.9em; color: #48bb78;"></pre>
             </div>
         </div>
     </div>
@@ -373,6 +402,89 @@
                     displayData(data.data);
                 } else {
                     alert('No data available. Run scraper first!');
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // View logs
+        async function viewLogs() {
+            try {
+                const res = await fetch('/api/logs/latest', {
+                    credentials: 'include'
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    const logs = data.logs || data.buffer || 'No logs available';
+                    
+                    // Show inline
+                    const logsSection = document.getElementById('logsSection');
+                    const logsDisplay = document.getElementById('logsDisplay');
+                    logsDisplay.textContent = logs;
+                    logsSection.style.display = 'block';
+                    logsSection.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    alert('❌ No logs available yet. Run scraper first!');
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Download logs
+        async function downloadLogs() {
+            try {
+                const res = await fetch('/api/logs/download', {
+                    credentials: 'include'
+                });
+                
+                if (res.ok) {
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `logixx-scraper-${Date.now()}.log`;
+                    a.click();
+                } else {
+                    alert('❌ No logs available yet. Run scraper first!');
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Update credentials
+        async function updateCredentials() {
+            const email = document.getElementById('settingsEmail').value.trim();
+            const password = document.getElementById('settingsPassword').value.trim();
+            
+            if (!email && !password) {
+                alert('Please enter at least email or password');
+                return;
+            }
+
+            if (!confirm('Update Logixx credentials? This will be used for next scrape.')) {
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/settings/credentials', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await res.json();
+                
+                if (res.ok) {
+                    alert('✅ Credentials updated! Next scrape will use new credentials.');
+                    document.getElementById('settingsEmail').value = '';
+                    document.getElementById('settingsPassword').value = '';
+                } else {
+                    alert(`❌ Error: ${data.error}`);
                 }
             } catch (error) {
                 alert(`❌ Error: ${error.message}`);
