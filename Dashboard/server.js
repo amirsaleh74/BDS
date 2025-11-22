@@ -546,6 +546,155 @@ app.post('/api/twilio/sms/send-to-clients', async (req, res) => {
     }
 });
 
+// ========== N8N INTEGRATION ROUTES ==========
+
+// Route: Get All Clients for n8n
+app.get('/api/n8n/clients', (req, res) => {
+    try {
+        const files = db.getAllFiles();
+
+        // Format for n8n consumption
+        const clients = files.map(file => ({
+            appId: file.appId,
+            alv: file.alv,
+            name: file.name,
+            phone: file.phone,
+            email: file.email,
+            status: file.status,
+            debtAmount: file.debtAmount,
+            notes: file.notes,
+            addedAt: file.addedAt
+        }));
+
+        res.json({
+            success: true,
+            count: clients.length,
+            clients: clients
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Get Single Client by ID for n8n
+app.get('/api/n8n/clients/:appId', (req, res) => {
+    try {
+        const { appId } = req.params;
+        const client = db.getFileByAppId(appId);
+
+        if (!client) {
+            return res.status(404).json({ success: false, error: 'Client not found' });
+        }
+
+        res.json({
+            success: true,
+            client: {
+                appId: client.appId,
+                alv: client.alv,
+                name: client.name,
+                phone: client.phone,
+                email: client.email,
+                status: client.status,
+                debtAmount: client.debtAmount,
+                notes: client.notes,
+                addedAt: client.addedAt
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Make Call with Audio URL (for n8n + ElevenLabs)
+app.post('/api/n8n/call/with-audio', async (req, res) => {
+    try {
+        const { to, audioUrl, clientData } = req.body;
+
+        if (!to) {
+            return res.status(400).json({ success: false, error: 'Phone number is required' });
+        }
+
+        if (!audioUrl) {
+            return res.status(400).json({ success: false, error: 'Audio URL is required' });
+        }
+
+        if (!twilioService || !twilioService.isConfigured()) {
+            return res.status(400).json({ success: false, error: 'Twilio is not configured' });
+        }
+
+        // Format phone number
+        const formattedNumber = twilioService.formatPhoneNumber(to);
+
+        // Create TwiML that plays the audio
+        const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Play>${audioUrl}</Play>
+</Response>`;
+
+        db.addActivity('Making AI voicemail call', `To: ${formattedNumber}`);
+
+        // Make call with custom TwiML
+        const result = await twilioService.makeCall(formattedNumber, null, twiml);
+
+        // Save to history with client data
+        db.addCallHistory({
+            to: formattedNumber,
+            message: `AI Voicemail - ${clientData?.name || 'Unknown'}`,
+            success: result.success,
+            callId: result.callId,
+            error: result.error,
+            audioUrl: audioUrl,
+            clientData: clientData
+        });
+
+        if (result.success) {
+            db.addActivity('AI voicemail call successful', `To: ${formattedNumber}`, 'success');
+        } else {
+            db.addActivity('AI voicemail call failed', result.error, 'error');
+        }
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error making AI voicemail call:', error);
+        db.addActivity('AI voicemail call error', error.message, 'error');
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Webhook callback for call status (n8n can listen to this)
+app.post('/api/n8n/webhook/call-status', (req, res) => {
+    try {
+        const { callId, status, to, clientData } = req.body;
+
+        db.addActivity(
+            'Call status update from n8n',
+            `Call ${callId} to ${to}: ${status}`,
+            status === 'completed' ? 'success' : 'info'
+        );
+
+        res.json({ success: true, message: 'Status received' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Log n8n workflow execution
+app.post('/api/n8n/log', (req, res) => {
+    try {
+        const { workflow, action, details, type = 'info' } = req.body;
+
+        db.addActivity(
+            `n8n: ${workflow} - ${action}`,
+            details || '',
+            type
+        );
+
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // Route: Toggle Monitors
 app.post('/api/monitor/toggle/:type', async (req, res) => {
     try {

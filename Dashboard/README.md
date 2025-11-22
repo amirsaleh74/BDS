@@ -28,10 +28,21 @@ Automated file management and monitoring system for LOGIXX CRM with shark tank d
 - **Auto-Protection**: Automatically adds protection note
 - **Success Tracking**: Reports success/failure for each identifier
 
-### 📱 EjonTech VoIP Integration (Coming Soon)
-- **SIM Card Gateway**: SMS sending via physical SIM cards
-- **VoIP Calling**: Place calls through VoIP gateway
-- **Bulk SMS**: Send campaigns to multiple recipients
+### 📱 Twilio SMS & Calling
+- **Single & Bulk SMS**: Send text messages to clients with auto phone formatting
+- **Voice Calls**: Make calls with text-to-speech voicemails
+- **SMS/Call History**: Track all communications with success/failure status
+- **Easy Configuration**: Set up with Twilio credentials in settings
+- **Integration**: Works with LOGIXX client database
+- [Full Documentation →](TWILIO.md)
+
+### 🤖 n8n + ElevenLabs AI Voicemail Automation
+- **AI Voice Generation**: Create natural-sounding voicemails with ElevenLabs
+- **Personalized Messages**: Dynamic message generation per client
+- **Automated Campaigns**: Schedule and run voicemail campaigns
+- **Full Workflow**: n8n orchestrates client data → AI voice → Twilio calls
+- **Ready-to-Use Templates**: Import and customize workflows
+- [Full Documentation →](N8N_INTEGRATION.md)
 
 ## 🚀 Quick Start
 

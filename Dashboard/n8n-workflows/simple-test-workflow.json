@@ -1,0 +1,222 @@
+{
+  "name": "Simple Test - Single Client AI Voicemail",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/n8n/clients",
+        "options": {}
+      },
+      "name": "Get Clients",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "limit": 1
+      },
+      "name": "Take First Client",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Simple test message\nconst client = $input.item.json.clients[0];\n\nconst message = `Hello ${client.name}. This is a test message from Better Debt Solutions. This is an attempt to collect a debt. Your current account balance is $${client.debtAmount}. Please call us back at 1-800-555-0123. To opt out, press 9. Thank you.`;\n\nreturn {\n  json: {\n    ...client,\n    personalizedMessage: message,\n    messageLength: message.length\n  }\n};"
+      },
+      "name": "Generate Test Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"text\": \"{{ $json.personalizedMessage }}\",\n  \"model_id\": \"eleven_monolingual_v1\",\n  \"voice_settings\": {\n    \"stability\": 0.5,\n    \"similarity_boost\": 0.75\n  }\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "name": "ElevenLabs Text-to-Speech",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1050, 300],
+      "notes": "Voice ID: Rachel (default). Replace with your preferred voice."
+    },
+    {
+      "parameters": {
+        "mode": "jsonToBinary",
+        "options": {
+          "fileName": "=voicemail_{{ $json.appId }}.mp3",
+          "mimeType": "audio/mpeg"
+        }
+      },
+      "name": "Convert to Binary",
+      "type": "n8n-nodes-base.moveBinaryData",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// In production, upload to S3/Cloudinary and return the public URL\n// For testing, we'll use a placeholder URL\n\nconst audioUrl = \"https://your-storage-bucket.s3.amazonaws.com/test-voicemail.mp3\";\n\nreturn {\n  json: {\n    ...$input.item.json,\n    audioUrl: audioUrl,\n    audioGenerated: true,\n    note: \"Replace this with actual S3/Cloudinary upload in production\"\n  }\n};"
+      },
+      "name": "Set Audio URL (Placeholder)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1450, 300],
+      "notes": "REPLACE THIS: Upload to actual storage and get public URL"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/n8n/call/with-audio",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"to\": \"{{ $json.phone }}\",\n  \"audioUrl\": \"{{ $json.audioUrl }}\",\n  \"clientData\": {\n    \"name\": \"{{ $json.name }}\",\n    \"appId\": \"{{ $json.appId }}\",\n    \"debtAmount\": \"{{ $json.debtAmount }}\"\n  }\n}",
+        "options": {}
+      },
+      "name": "Make Test Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1650, 300],
+      "notes": "This will make an actual call! Use your own number for testing."
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/n8n/log",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"workflow\": \"Simple Test Workflow\",\n  \"action\": \"Test Call Completed\",\n  \"details\": \"Test call made to {{ $json.name }} at {{ $json.phone }}\",\n  \"type\": \"success\"\n}",
+        "options": {}
+      },
+      "name": "Log Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1850, 300]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Clients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Clients": {
+      "main": [
+        [
+          {
+            "node": "Take First Client",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Take First Client": {
+      "main": [
+        [
+          {
+            "node": "Generate Test Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Test Message": {
+      "main": [
+        [
+          {
+            "node": "ElevenLabs Text-to-Speech",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ElevenLabs Text-to-Speech": {
+      "main": [
+        [
+          {
+            "node": "Convert to Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to Binary": {
+      "main": [
+        [
+          {
+            "node": "Set Audio URL (Placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Audio URL (Placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Make Test Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Make Test Call": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "notes": [
+    {
+      "content": "## Simple Test Workflow\n\nThis workflow tests the entire AI voicemail pipeline with a single client.\n\n### Steps:\n1. Gets all clients from your dashboard\n2. Takes only the first one (for testing)\n3. Generates a test message\n4. Converts to speech with ElevenLabs\n5. Makes the call via Twilio\n6. Logs the result\n\n### Before Running:\n1. Configure ElevenLabs credentials\n2. Replace the placeholder audio URL with real S3/Cloudinary upload\n3. Update the phone number to YOUR number for testing\n4. Ensure LOGIXX Dashboard is running\n\n### Production Ready:\nOnce this works, use the full workflow with batch processing and proper storage.",
+      "position": [250, 100],
+      "width": 400,
+      "height": 200
+    }
+  ]
+}

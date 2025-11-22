@@ -1,0 +1,247 @@
+{
+  "name": "AI Voicemail Campaign - ElevenLabs + Twilio",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/n8n/clients",
+        "options": {}
+      },
+      "name": "Get All Clients",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [450, 300],
+      "notes": "Fetch all clients from LOGIXX Dashboard"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "clients",
+        "options": {}
+      },
+      "name": "Split Clients",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "notes": "Process one client at a time"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate personalized message for each client\nconst client = $input.item.json;\n\nconst message = `Hello ${client.name}. This is a message from Better Debt Solutions regarding your account. We wanted to reach out about your debt settlement options. Your current debt amount is $${client.debtAmount}. We have some great solutions available that could help reduce your debt significantly. Please call us back at 1-800-XXX-XXXX at your earliest convenience. Thank you and have a great day.`;\n\nreturn {\n  json: {\n    ...client,\n    personalizedMessage: message\n  }\n};"
+      },
+      "name": "Generate Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "notes": "Create personalized message text"
+    },
+    {
+      "parameters": {
+        "url": "https://api.elevenlabs.io/v1/text-to-speech/VOICE_ID",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $json.personalizedMessage }}"
+            },
+            {
+              "name": "model_id",
+              "value": "eleven_monolingual_v1"
+            },
+            {
+              "name": "voice_settings",
+              "value": {
+                "stability": 0.5,
+                "similarity_boost": 0.75
+              }
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "name": "Generate Voice (ElevenLabs)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1050, 300],
+      "notes": "Convert text to speech using ElevenLabs"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Upload Audio to Public URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1250, 300],
+      "notes": "Upload audio to public URL (S3, Cloudinary, etc.)"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/n8n/call/with-audio",
+        "authentication": "none",
+        "sendHeaders": true,
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"to\": \"{{ $json.phone }}\",\n  \"audioUrl\": \"{{ $json.audioUrl }}\",\n  \"clientData\": {\n    \"name\": \"{{ $json.name }}\",\n    \"appId\": \"{{ $json.appId }}\",\n    \"debtAmount\": \"{{ $json.debtAmount }}\"\n  }\n}",
+        "options": {}
+      },
+      "name": "Make Call via Twilio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1450, 300],
+      "notes": "Call client and play AI-generated voicemail"
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "seconds"
+      },
+      "name": "Wait 2 Seconds",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1650, 300],
+      "notes": "Prevent rate limiting"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/n8n/log",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"workflow\": \"AI Voicemail Campaign\",\n  \"action\": \"Call Completed\",\n  \"details\": \"Called {{ $json.name }} at {{ $json.phone }}\",\n  \"type\": \"success\"\n}",
+        "options": {}
+      },
+      "name": "Log to Dashboard",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1850, 300],
+      "notes": "Log activity to LOGIXX Dashboard"
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Get All Clients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Clients": {
+      "main": [
+        [
+          {
+            "node": "Split Clients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Clients": {
+      "main": [
+        [
+          {
+            "node": "Generate Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Message": {
+      "main": [
+        [
+          {
+            "node": "Generate Voice (ElevenLabs)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Voice (ElevenLabs)": {
+      "main": [
+        [
+          {
+            "node": "Upload Audio to Public URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Audio to Public URL": {
+      "main": [
+        [
+          {
+            "node": "Make Call via Twilio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Make Call via Twilio": {
+      "main": [
+        [
+          {
+            "node": "Wait 2 Seconds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 2 Seconds": {
+      "main": [
+        [
+          {
+            "node": "Log to Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Dashboard": {
+      "main": [
+        [
+          {
+            "node": "Split Clients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
