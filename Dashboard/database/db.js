@@ -10,6 +10,10 @@ class Database {
         this.watchlistFile = path.join(this.dataDir, 'watchlist.json');
         this.smsHistoryFile = path.join(this.dataDir, 'sms-history.json');
         this.callHistoryFile = path.join(this.dataDir, 'call-history.json');
+        this.emailHistoryFile = path.join(this.dataDir, 'email-history.json');
+        this.emailTrackingFile = path.join(this.dataDir, 'email-tracking.json');
+        this.callDispositionsFile = path.join(this.dataDir, 'call-dispositions.json');
+        this.dncListFile = path.join(this.dataDir, 'dnc-list.json');
 
         this.init();
     }
@@ -39,6 +43,18 @@ class Database {
         if (!fs.existsSync(this.callHistoryFile)) {
             this.saveData(this.callHistoryFile, []);
         }
+        if (!fs.existsSync(this.emailHistoryFile)) {
+            this.saveData(this.emailHistoryFile, []);
+        }
+        if (!fs.existsSync(this.emailTrackingFile)) {
+            this.saveData(this.emailTrackingFile, {});
+        }
+        if (!fs.existsSync(this.callDispositionsFile)) {
+            this.saveData(this.callDispositionsFile, []);
+        }
+        if (!fs.existsSync(this.dncListFile)) {
+            this.saveData(this.dncListFile, []);
+        }
     }
 
     getDefaultSettings() {
@@ -53,6 +69,13 @@ class Database {
             twilioAccountSid: '',
             twilioAuthToken: '',
             twilioPhoneNumber: '',
+            emailHost: '',
+            emailPort: 587,
+            emailSecure: false,
+            emailUser: '',
+            emailPass: '',
+            emailFromEmail: '',
+            trackingBaseUrl: 'http://localhost:3000',
             lastUpdated: new Date().toISOString()
         };
     }
@@ -273,6 +296,13 @@ class Database {
             return callDate >= today;
         }).length;
 
+        const emailHistory = this.getEmailHistory(1000);
+
+        const emailsSentToday = emailHistory.filter(e => {
+            const emailDate = new Date(e.timestamp);
+            return emailDate >= today;
+        }).length;
+
         return {
             totalFiles: files.length,
             filesAssignedToday: successToday,
@@ -282,8 +312,212 @@ class Database {
             smsSentToday: smsSentToday,
             callsMadeToday: callsMadeToday,
             totalSMSSent: smsHistory.length,
-            totalCallsMade: callHistory.length
+            totalCallsMade: callHistory.length,
+            emailsSentToday: emailsSentToday,
+            totalEmailsSent: emailHistory.length
         };
+    }
+
+    // Email History Methods
+    getEmailHistory(limit = 100) {
+        const history = this.loadData(this.emailHistoryFile) || [];
+        return history.slice(0, limit);
+    }
+
+    addEmailHistory(emailData) {
+        const history = this.loadData(this.emailHistoryFile) || [];
+
+        history.unshift({
+            ...emailData,
+            timestamp: new Date().toISOString()
+        });
+
+        // Keep only last 500 emails
+        const trimmed = history.slice(0, 500);
+
+        return this.saveData(this.emailHistoryFile, trimmed);
+    }
+
+    clearEmailHistory() {
+        return this.saveData(this.emailHistoryFile, []);
+    }
+
+    // Email Tracking Methods
+    getEmailTracking(trackingId) {
+        const tracking = this.loadData(this.emailTrackingFile) || {};
+        return tracking[trackingId] || null;
+    }
+
+    initEmailTracking(trackingId, emailData) {
+        const tracking = this.loadData(this.emailTrackingFile) || {};
+
+        tracking[trackingId] = {
+            ...emailData,
+            opens: [],
+            clicks: [],
+            scrollDepths: [],
+            timeSpent: 0,
+            createdAt: new Date().toISOString()
+        };
+
+        return this.saveData(this.emailTrackingFile, tracking);
+    }
+
+    trackEmailOpen(trackingId, userAgent, ip) {
+        const tracking = this.loadData(this.emailTrackingFile) || {};
+
+        if (!tracking[trackingId]) {
+            tracking[trackingId] = { opens: [], clicks: [], scrollDepths: [], timeSpent: 0 };
+        }
+
+        tracking[trackingId].opens.push({
+            timestamp: new Date().toISOString(),
+            userAgent: userAgent,
+            ip: ip
+        });
+
+        return this.saveData(this.emailTrackingFile, tracking);
+    }
+
+    trackEmailClick(trackingId, linkIndex, url, userAgent, ip) {
+        const tracking = this.loadData(this.emailTrackingFile) || {};
+
+        if (!tracking[trackingId]) {
+            tracking[trackingId] = { opens: [], clicks: [], scrollDepths: [], timeSpent: 0 };
+        }
+
+        tracking[trackingId].clicks.push({
+            timestamp: new Date().toISOString(),
+            linkIndex: linkIndex,
+            url: url,
+            userAgent: userAgent,
+            ip: ip
+        });
+
+        return this.saveData(this.emailTrackingFile, tracking);
+    }
+
+    trackEmailScroll(trackingId, depth) {
+        const tracking = this.loadData(this.emailTrackingFile) || {};
+
+        if (!tracking[trackingId]) {
+            tracking[trackingId] = { opens: [], clicks: [], scrollDepths: [], timeSpent: 0 };
+        }
+
+        tracking[trackingId].scrollDepths.push({
+            timestamp: new Date().toISOString(),
+            depth: depth
+        });
+
+        return this.saveData(this.emailTrackingFile, tracking);
+    }
+
+    trackEmailTimeSpent(trackingId, timeSpent) {
+        const tracking = this.loadData(this.emailTrackingFile) || {};
+
+        if (!tracking[trackingId]) {
+            tracking[trackingId] = { opens: [], clicks: [], scrollDepths: [], timeSpent: 0 };
+        }
+
+        tracking[trackingId].timeSpent = Math.max(tracking[trackingId].timeSpent || 0, timeSpent);
+        tracking[trackingId].lastActivity = new Date().toISOString();
+
+        return this.saveData(this.emailTrackingFile, tracking);
+    }
+
+    getAllEmailTracking() {
+        return this.loadData(this.emailTrackingFile) || {};
+    }
+
+    // Call Disposition Methods
+    getCallDispositions(limit = 100) {
+        const dispositions = this.loadData(this.callDispositionsFile) || [];
+        return dispositions.slice(0, limit);
+    }
+
+    addCallDisposition(callId, disposition, notes = '') {
+        const dispositions = this.loadData(this.callDispositionsFile) || [];
+
+        dispositions.unshift({
+            callId: callId,
+            disposition: disposition,
+            notes: notes,
+            timestamp: new Date().toISOString()
+        });
+
+        // Keep only last 1000 dispositions
+        const trimmed = dispositions.slice(0, 1000);
+
+        return this.saveData(this.callDispositionsFile, trimmed);
+    }
+
+    getCallDispositionByCallId(callId) {
+        const dispositions = this.loadData(this.callDispositionsFile) || [];
+        return dispositions.find(d => d.callId === callId);
+    }
+
+    clearCallDispositions() {
+        return this.saveData(this.callDispositionsFile, []);
+    }
+
+    // DNC List Methods
+    getDNCList() {
+        return this.loadData(this.dncListFile) || [];
+    }
+
+    addToDNCList(phoneNumber, reason = 'Manual', source = 'Internal') {
+        const dncList = this.loadData(this.dncListFile) || [];
+
+        // Check if already exists
+        const exists = dncList.find(entry => entry.phoneNumber === phoneNumber);
+        if (exists) {
+            return false;
+        }
+
+        dncList.push({
+            phoneNumber: phoneNumber,
+            reason: reason,
+            source: source,
+            addedAt: new Date().toISOString()
+        });
+
+        return this.saveData(this.dncListFile, dncList);
+    }
+
+    removeFromDNCList(phoneNumber) {
+        const dncList = this.loadData(this.dncListFile) || [];
+        const filtered = dncList.filter(entry => entry.phoneNumber !== phoneNumber);
+        return this.saveData(this.dncListFile, filtered);
+    }
+
+    isOnDNCList(phoneNumber) {
+        const dncList = this.loadData(this.dncListFile) || [];
+        return dncList.some(entry => entry.phoneNumber === phoneNumber);
+    }
+
+    bulkAddToDNCList(phoneNumbers, reason = 'Bulk Import', source = 'Import') {
+        const dncList = this.loadData(this.dncListFile) || [];
+        let addedCount = 0;
+
+        phoneNumbers.forEach(phoneNumber => {
+            const exists = dncList.find(entry => entry.phoneNumber === phoneNumber);
+            if (!exists) {
+                dncList.push({
+                    phoneNumber: phoneNumber,
+                    reason: reason,
+                    source: source,
+                    addedAt: new Date().toISOString()
+                });
+                addedCount++;
+            }
+        });
+
+        this.saveData(this.dncListFile, dncList);
+        return addedCount;
+    }
+
+    clearDNCList() {
+        return this.saveData(this.dncListFile, []);
     }
 }
 
