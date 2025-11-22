@@ -8,7 +8,9 @@ class Database {
         this.filesFile = path.join(this.dataDir, 'files.json');
         this.activityFile = path.join(this.dataDir, 'activity.json');
         this.watchlistFile = path.join(this.dataDir, 'watchlist.json');
-        
+        this.smsHistoryFile = path.join(this.dataDir, 'sms-history.json');
+        this.callHistoryFile = path.join(this.dataDir, 'call-history.json');
+
         this.init();
     }
 
@@ -31,6 +33,12 @@ class Database {
         if (!fs.existsSync(this.watchlistFile)) {
             this.saveData(this.watchlistFile, []);
         }
+        if (!fs.existsSync(this.smsHistoryFile)) {
+            this.saveData(this.smsHistoryFile, []);
+        }
+        if (!fs.existsSync(this.callHistoryFile)) {
+            this.saveData(this.callHistoryFile, []);
+        }
     }
 
     getDefaultSettings() {
@@ -42,6 +50,9 @@ class Database {
             protectionNote: 'I am working on this file',
             sharkTankEnabled: false,
             watchlistEnabled: false,
+            twilioAccountSid: '',
+            twilioAuthToken: '',
+            twilioPhoneNumber: '',
             lastUpdated: new Date().toISOString()
         };
     }
@@ -183,11 +194,61 @@ class Database {
         return this.saveData(this.watchlistFile, []);
     }
 
+    // SMS History Methods
+    getSMSHistory(limit = 100) {
+        const history = this.loadData(this.smsHistoryFile) || [];
+        return history.slice(0, limit);
+    }
+
+    addSMSHistory(smsData) {
+        const history = this.loadData(this.smsHistoryFile) || [];
+
+        history.unshift({
+            ...smsData,
+            timestamp: new Date().toISOString()
+        });
+
+        // Keep only last 500 messages
+        const trimmed = history.slice(0, 500);
+
+        return this.saveData(this.smsHistoryFile, trimmed);
+    }
+
+    clearSMSHistory() {
+        return this.saveData(this.smsHistoryFile, []);
+    }
+
+    // Call History Methods
+    getCallHistory(limit = 100) {
+        const history = this.loadData(this.callHistoryFile) || [];
+        return history.slice(0, limit);
+    }
+
+    addCallHistory(callData) {
+        const history = this.loadData(this.callHistoryFile) || [];
+
+        history.unshift({
+            ...callData,
+            timestamp: new Date().toISOString()
+        });
+
+        // Keep only last 500 calls
+        const trimmed = history.slice(0, 500);
+
+        return this.saveData(this.callHistoryFile, trimmed);
+    }
+
+    clearCallHistory() {
+        return this.saveData(this.callHistoryFile, []);
+    }
+
     // Statistics Methods
     getStats() {
         const files = this.getAllFiles();
         const activity = this.getRecentActivity(1000);
         const watchlist = this.getWatchlist();
+        const smsHistory = this.getSMSHistory(1000);
+        const callHistory = this.getCallHistory(1000);
 
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -197,17 +258,31 @@ class Database {
             return activityDate >= today;
         });
 
-        const successToday = todayActivity.filter(a => 
-            a.type === 'success' && 
+        const successToday = todayActivity.filter(a =>
+            a.type === 'success' &&
             (a.action.includes('Auto-assigned') || a.action.includes('Grabbed'))
         ).length;
+
+        const smsSentToday = smsHistory.filter(s => {
+            const smsDate = new Date(s.timestamp);
+            return smsDate >= today;
+        }).length;
+
+        const callsMadeToday = callHistory.filter(c => {
+            const callDate = new Date(c.timestamp);
+            return callDate >= today;
+        }).length;
 
         return {
             totalFiles: files.length,
             filesAssignedToday: successToday,
             watchlistCount: watchlist.length,
             totalActivity: activity.length,
-            lastActivity: activity.length > 0 ? activity[0] : null
+            lastActivity: activity.length > 0 ? activity[0] : null,
+            smsSentToday: smsSentToday,
+            callsMadeToday: callsMadeToday,
+            totalSMSSent: smsHistory.length,
+            totalCallsMade: callHistory.length
         };
     }
 }

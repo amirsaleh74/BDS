@@ -263,7 +263,27 @@
                     <div class="help-text">This note will be added when auto-assigning files</div>
                 </div>
             </div>
-            
+
+            <!-- Twilio Configuration -->
+            <div class="section">
+                <h2>📱 Twilio SMS & Calling</h2>
+                <div class="form-group">
+                    <label>Twilio Account SID:</label>
+                    <input type="text" name="twilioAccountSid" value="<%= settings.twilioAccountSid || '' %>" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+                    <div class="help-text">Find this in your <a href="https://console.twilio.com/" target="_blank">Twilio Console</a></div>
+                </div>
+                <div class="form-group">
+                    <label>Twilio Auth Token:</label>
+                    <input type="password" name="twilioAuthToken" value="<%= settings.twilioAuthToken || '' %>" placeholder="Your Auth Token">
+                    <div class="help-text">Keep this secret - it's used to authenticate API requests</div>
+                </div>
+                <div class="form-group">
+                    <label>Twilio Phone Number:</label>
+                    <input type="text" name="twilioPhoneNumber" value="<%= settings.twilioPhoneNumber || '' %>" placeholder="+1234567890">
+                    <div class="help-text">Your Twilio phone number in E.164 format (e.g., +15551234567)</div>
+                </div>
+            </div>
+
             <button type="submit" class="btn">Save Settings</button>
         </form>
     </div>
@@ -280,7 +300,10 @@
                 watchlistInterval: formData.get('watchlistInterval'),
                 protectionNote: formData.get('protectionNote'),
                 sharkTankEnabled: formData.get('sharkTankEnabled') === 'on',
-                watchlistEnabled: formData.get('watchlistEnabled') === 'on'
+                watchlistEnabled: formData.get('watchlistEnabled') === 'on',
+                twilioAccountSid: formData.get('twilioAccountSid'),
+                twilioAuthToken: formData.get('twilioAuthToken'),
+                twilioPhoneNumber: formData.get('twilioPhoneNumber')
             };
             
             try {

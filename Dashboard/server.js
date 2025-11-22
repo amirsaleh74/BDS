@@ -12,6 +12,7 @@ const PORT = process.env.PORT || 3000;
 const LogixxScraper = require('./scraper/logixx-scraper');
 const Database = require('./database/db');
 const csvExporter = require('./utils/csv-exporter');
+const TwilioService = require('./utils/twilio-service');
 
 // Middleware
 app.use(bodyParser.json());
@@ -27,6 +28,21 @@ const db = new Database();
 let scraper = null;
 let sharkTankJob = null;
 let watchlistJob = null;
+
+// Initialize Twilio service
+let twilioService = null;
+
+// Initialize Twilio with saved settings
+function initializeTwilio() {
+    const settings = db.getSettings();
+    if (settings.twilioAccountSid && settings.twilioAuthToken && settings.twilioPhoneNumber) {
+        twilioService = new TwilioService(
+            settings.twilioAccountSid,
+            settings.twilioAuthToken,
+            settings.twilioPhoneNumber
+        );
+    }
+}
 
 // Route: Dashboard Home
 app.get('/', (req, res) => {
@@ -59,7 +75,10 @@ app.post('/api/settings', async (req, res) => {
             watchlistInterval,
             protectionNote,
             sharkTankEnabled,
-            watchlistEnabled
+            watchlistEnabled,
+            twilioAccountSid,
+            twilioAuthToken,
+            twilioPhoneNumber
         } = req.body;
 
         // Update settings
@@ -70,8 +89,14 @@ app.post('/api/settings', async (req, res) => {
             watchlistInterval: parseInt(watchlistInterval),
             protectionNote,
             sharkTankEnabled: sharkTankEnabled === 'true',
-            watchlistEnabled: watchlistEnabled === 'true'
+            watchlistEnabled: watchlistEnabled === 'true',
+            twilioAccountSid,
+            twilioAuthToken,
+            twilioPhoneNumber
         });
+
+        // Reinitialize Twilio with new credentials
+        initializeTwilio();
 
         // Restart monitors with new intervals
         await restartMonitors();
@@ -225,6 +250,302 @@ app.get('/api/activity', (req, res) => {
     }
 });
 
+// ========== TWILIO ROUTES ==========
+
+// Route: Twilio Page
+app.get('/twilio', (req, res) => {
+    const stats = db.getStats();
+    const settings = db.getSettings();
+    const smsHistory = db.getSMSHistory(50);
+    const callHistory = db.getCallHistory(50);
+    const recentActivity = db.getRecentActivity(20);
+
+    res.render('twilio', {
+        stats,
+        settings,
+        smsHistory,
+        callHistory,
+        recentActivity,
+        twilioConfigured: twilioService && twilioService.isConfigured()
+    });
+});
+
+// Route: Send SMS
+app.post('/api/twilio/sms/send', async (req, res) => {
+    try {
+        const { to, message } = req.body;
+
+        if (!to || !message) {
+            return res.status(400).json({ success: false, error: 'Phone number and message are required' });
+        }
+
+        if (!twilioService || !twilioService.isConfigured()) {
+            return res.status(400).json({ success: false, error: 'Twilio is not configured. Please add credentials in settings.' });
+        }
+
+        // Format phone number
+        const formattedNumber = twilioService.formatPhoneNumber(to);
+
+        db.addActivity('Sending SMS', `To: ${formattedNumber}`);
+
+        const result = await twilioService.sendSMS(formattedNumber, message);
+
+        // Save to history
+        db.addSMSHistory({
+            to: formattedNumber,
+            message: message,
+            success: result.success,
+            messageId: result.messageId,
+            error: result.error
+        });
+
+        if (result.success) {
+            db.addActivity('SMS sent successfully', `To: ${formattedNumber}`, 'success');
+        } else {
+            db.addActivity('SMS failed', result.error, 'error');
+        }
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error sending SMS:', error);
+        db.addActivity('SMS error', error.message, 'error');
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Send Bulk SMS
+app.post('/api/twilio/sms/bulk', async (req, res) => {
+    try {
+        const { recipients, message } = req.body;
+
+        if (!recipients || !message) {
+            return res.status(400).json({ success: false, error: 'Recipients and message are required' });
+        }
+
+        if (!twilioService || !twilioService.isConfigured()) {
+            return res.status(400).json({ success: false, error: 'Twilio is not configured. Please add credentials in settings.' });
+        }
+
+        // Parse recipients (can be comma or newline separated)
+        const phoneNumbers = recipients
+            .split(/[\n,]+/)
+            .map(num => num.trim())
+            .filter(num => num.length > 0)
+            .map(num => twilioService.formatPhoneNumber(num));
+
+        db.addActivity('Sending bulk SMS', `To ${phoneNumbers.length} recipients`);
+
+        const result = await twilioService.sendBulkSMS(phoneNumbers, message);
+
+        // Save each result to history
+        result.results.forEach(r => {
+            db.addSMSHistory({
+                to: r.to,
+                message: message,
+                success: r.success,
+                messageId: r.messageId,
+                error: r.error
+            });
+        });
+
+        db.addActivity(
+            'Bulk SMS completed',
+            `Success: ${result.successful}, Failed: ${result.failed}`,
+            result.failed === 0 ? 'success' : 'info'
+        );
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error sending bulk SMS:', error);
+        db.addActivity('Bulk SMS error', error.message, 'error');
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Make Call
+app.post('/api/twilio/call/make', async (req, res) => {
+    try {
+        const { to, message } = req.body;
+
+        if (!to || !message) {
+            return res.status(400).json({ success: false, error: 'Phone number and message are required' });
+        }
+
+        if (!twilioService || !twilioService.isConfigured()) {
+            return res.status(400).json({ success: false, error: 'Twilio is not configured. Please add credentials in settings.' });
+        }
+
+        // Format phone number
+        const formattedNumber = twilioService.formatPhoneNumber(to);
+
+        db.addActivity('Making call', `To: ${formattedNumber}`);
+
+        const result = await twilioService.makeCall(formattedNumber, message);
+
+        // Save to history
+        db.addCallHistory({
+            to: formattedNumber,
+            message: message,
+            success: result.success,
+            callId: result.callId,
+            error: result.error
+        });
+
+        if (result.success) {
+            db.addActivity('Call initiated successfully', `To: ${formattedNumber}`, 'success');
+        } else {
+            db.addActivity('Call failed', result.error, 'error');
+        }
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error making call:', error);
+        db.addActivity('Call error', error.message, 'error');
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Make Bulk Calls
+app.post('/api/twilio/call/bulk', async (req, res) => {
+    try {
+        const { recipients, message } = req.body;
+
+        if (!recipients || !message) {
+            return res.status(400).json({ success: false, error: 'Recipients and message are required' });
+        }
+
+        if (!twilioService || !twilioService.isConfigured()) {
+            return res.status(400).json({ success: false, error: 'Twilio is not configured. Please add credentials in settings.' });
+        }
+
+        // Parse recipients (can be comma or newline separated)
+        const phoneNumbers = recipients
+            .split(/[\n,]+/)
+            .map(num => num.trim())
+            .filter(num => num.length > 0)
+            .map(num => twilioService.formatPhoneNumber(num));
+
+        db.addActivity('Making bulk calls', `To ${phoneNumbers.length} recipients`);
+
+        const result = await twilioService.makeBulkCalls(phoneNumbers, message);
+
+        // Save each result to history
+        result.results.forEach(r => {
+            db.addCallHistory({
+                to: r.to,
+                message: message,
+                success: r.success,
+                callId: r.callId,
+                error: r.error
+            });
+        });
+
+        db.addActivity(
+            'Bulk calls completed',
+            `Success: ${result.successful}, Failed: ${result.failed}`,
+            result.failed === 0 ? 'success' : 'info'
+        );
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error making bulk calls:', error);
+        db.addActivity('Bulk call error', error.message, 'error');
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Get SMS History
+app.get('/api/twilio/sms/history', (req, res) => {
+    try {
+        const limit = req.query.limit || 50;
+        const history = db.getSMSHistory(parseInt(limit));
+        res.json({ success: true, history });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Get Call History
+app.get('/api/twilio/call/history', (req, res) => {
+    try {
+        const limit = req.query.limit || 50;
+        const history = db.getCallHistory(parseInt(limit));
+        res.json({ success: true, history });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Test Twilio Credentials
+app.post('/api/twilio/test', async (req, res) => {
+    try {
+        if (!twilioService || !twilioService.isConfigured()) {
+            return res.status(400).json({ success: false, error: 'Twilio is not configured' });
+        }
+
+        const result = await twilioService.testCredentials();
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Send SMS to LOGIXX Clients
+app.post('/api/twilio/sms/send-to-clients', async (req, res) => {
+    try {
+        const { fileIds, message } = req.body;
+
+        if (!fileIds || !message) {
+            return res.status(400).json({ success: false, error: 'File IDs and message are required' });
+        }
+
+        if (!twilioService || !twilioService.isConfigured()) {
+            return res.status(400).json({ success: false, error: 'Twilio is not configured' });
+        }
+
+        // Get files from database
+        const files = db.getAllFiles();
+        const selectedFiles = files.filter(f => fileIds.includes(f.appId));
+
+        // Extract phone numbers
+        const phoneNumbers = selectedFiles
+            .map(f => f.phone)
+            .filter(phone => phone && phone.length > 0)
+            .map(phone => twilioService.formatPhoneNumber(phone));
+
+        if (phoneNumbers.length === 0) {
+            return res.status(400).json({ success: false, error: 'No valid phone numbers found in selected files' });
+        }
+
+        db.addActivity('Sending SMS to LOGIXX clients', `${phoneNumbers.length} recipients`);
+
+        const result = await twilioService.sendBulkSMS(phoneNumbers, message);
+
+        // Save to history
+        result.results.forEach(r => {
+            db.addSMSHistory({
+                to: r.to,
+                message: message,
+                success: r.success,
+                messageId: r.messageId,
+                error: r.error
+            });
+        });
+
+        db.addActivity(
+            'SMS to clients completed',
+            `Success: ${result.successful}, Failed: ${result.failed}`,
+            result.failed === 0 ? 'success' : 'info'
+        );
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error sending SMS to clients:', error);
+        db.addActivity('SMS to clients error', error.message, 'error');
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // Route: Toggle Monitors
 app.post('/api/monitor/toggle/:type', async (req, res) => {
     try {
@@ -369,7 +690,10 @@ async function initialize() {
 
         // Start monitors
         await restartMonitors();
-        
+
+        // Initialize Twilio
+        initializeTwilio();
+
         console.log('System initialized successfully');
     } catch (error) {
         console.error('Initialization error:', error);
