@@ -4,6 +4,8 @@ const cron = require('node-cron');
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
+const cookieParser = require('cookie-parser');
+const session = require('express-session');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,16 +15,51 @@ const LogixxScraper = require('./scraper/logixx-scraper');
 const Database = require('./database/db');
 const csvExporter = require('./utils/csv-exporter');
 const TwilioService = require('./utils/twilio-service');
+const dbCache = require('./utils/cache');
 
-// Middleware
+// Import middleware
+const {
+    generateTokens,
+    verifyToken,
+    requireRole,
+    requirePermission,
+    optionalAuth
+} = require('./middleware/auth');
+
+const {
+    securityHeaders,
+    loginLimiter,
+    apiLimiter,
+    strictLimiter,
+    compressionMiddleware,
+    sanitizeInput,
+    sanitizeBody,
+    sessionConfig,
+    requestLogger,
+    errorHandler
+} = require('./middleware/security');
+
+// Middleware - Security first
+app.use(securityHeaders());
+app.use(compressionMiddleware());
+app.use(requestLogger);
+app.use(cookieParser());
+app.use(session(sessionConfig));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(sanitizeBody);
 app.use(express.static('public'));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
 // Initialize database
 const db = new Database();
+
+// Make database available to all routes
+app.use((req, res, next) => {
+    req.db = db;
+    next();
+});
 
 // Initialize scraper
 let scraper = null;
@@ -44,29 +81,453 @@ function initializeTwilio() {
     }
 }
 
+// ===========================================
+// AUTHENTICATION ROUTES
+// ===========================================
+
+// Route: Setup First Admin (only if no users exist)
+app.get('/setup', (req, res) => {
+    const users = db.getAllUsers();
+    if (users.length > 0) {
+        return res.redirect('/login');
+    }
+    res.render('setup');
+});
+
+// Route: Login Page
+app.get('/login', (req, res) => {
+    // Check if setup is needed
+    const users = db.getAllUsers();
+    if (users.length === 0) {
+        return res.redirect('/setup');
+    }
+
+    // If already logged in, redirect to dashboard
+    const token = req.cookies?.accessToken;
+    if (token) {
+        try {
+            const jwt = require('jsonwebtoken');
+            const { JWT_SECRET } = require('./middleware/auth');
+            jwt.verify(token, JWT_SECRET);
+            return res.redirect('/');
+        } catch (error) {
+            // Token invalid, show login page
+        }
+    }
+    res.render('login', { error: req.query.error, expired: req.query.expired });
+});
+
+// Route: Register Page (only accessible by admins)
+app.get('/register', verifyToken, requireRole('admin'), (req, res) => {
+    res.render('register', { user: req.user });
+});
+
+// Route: Login API
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
+    try {
+        const { username, password } = req.body;
+
+        if (!username || !password) {
+            return res.status(400).json({
+                success: false,
+                error: 'Username and password are required'
+            });
+        }
+
+        // Get user from database
+        const user = db.getUserByUsername(username);
+
+        if (!user) {
+            db.addAuditLog(null, username, 'LOGIN_FAILED', 'auth', { reason: 'User not found' }, req.ip);
+            return res.status(401).json({
+                success: false,
+                error: 'Invalid username or password'
+            });
+        }
+
+        // Check if user is active
+        if (!user.isActive) {
+            db.addAuditLog(user.id, username, 'LOGIN_FAILED', 'auth', { reason: 'Account deactivated' }, req.ip);
+            return res.status(403).json({
+                success: false,
+                error: 'Account is deactivated. Please contact an administrator.'
+            });
+        }
+
+        // Verify password
+        const passwordMatch = await bcrypt.compare(password, user.password);
+
+        if (!passwordMatch) {
+            db.addAuditLog(user.id, username, 'LOGIN_FAILED', 'auth', { reason: 'Invalid password' }, req.ip);
+            return res.status(401).json({
+                success: false,
+                error: 'Invalid username or password'
+            });
+        }
+
+        // Generate tokens
+        const { accessToken, refreshToken } = generateTokens(user);
+
+        // Update last login
+        db.updateLastLogin(user.id);
+
+        // Create session
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        db.createSession(user.id, refreshToken, expiresAt);
+
+        // Log successful login
+        db.addAuditLog(user.id, username, 'LOGIN_SUCCESS', 'auth', {}, req.ip);
+        db.addActivity('User logged in', `${username} logged in`, 'info');
+
+        // Set cookies
+        res.cookie('accessToken', accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 15 * 60 * 1000, // 15 minutes
+            sameSite: 'strict'
+        });
+
+        res.cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+            sameSite: 'strict'
+        });
+
+        res.json({
+            success: true,
+            user: {
+                id: user.id,
+                username: user.username,
+                role: user.role,
+                theme: user.theme
+            }
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'An error occurred during login'
+        });
+    }
+});
+
+// Route: Register API (admin only)
+app.post('/api/auth/register', verifyToken, requireRole('admin'), async (req, res) => {
+    try {
+        const { username, password, email, role, permissions } = req.body;
+
+        if (!username || !password) {
+            return res.status(400).json({
+                success: false,
+                error: 'Username and password are required'
+            });
+        }
+
+        // Hash password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Create user
+        const result = db.createUser({
+            username,
+            password: hashedPassword,
+            email,
+            role: role || 'agent',
+            permissions: permissions || {},
+            createdBy: req.user.username
+        });
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        // Log user creation
+        db.addAuditLog(
+            req.user.id,
+            req.user.username,
+            'USER_CREATED',
+            'users',
+            { newUser: username, role: role || 'agent' },
+            req.ip
+        );
+
+        db.addActivity('User created', `${req.user.username} created user ${username}`, 'success');
+
+        res.json({
+            success: true,
+            user: {
+                id: result.user.id,
+                username: result.user.username,
+                role: result.user.role
+            }
+        });
+    } catch (error) {
+        console.error('Register error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'An error occurred during registration'
+        });
+    }
+});
+
+// Route: Logout
+app.post('/api/auth/logout', verifyToken, (req, res) => {
+    const refreshToken = req.cookies?.refreshToken;
+
+    if (refreshToken) {
+        db.deleteSession(refreshToken);
+    }
+
+    // Log logout
+    db.addAuditLog(req.user.id, req.user.username, 'LOGOUT', 'auth', {}, req.ip);
+
+    res.clearCookie('accessToken');
+    res.clearCookie('refreshToken');
+
+    res.json({ success: true });
+});
+
+// Route: Refresh Token
+app.post('/api/auth/refresh', async (req, res) => {
+    try {
+        const refreshToken = req.cookies?.refreshToken;
+
+        if (!refreshToken) {
+            return res.status(401).json({
+                success: false,
+                error: 'No refresh token provided'
+            });
+        }
+
+        // Verify refresh token
+        const jwt = require('jsonwebtoken');
+        const { JWT_REFRESH_SECRET } = require('./middleware/auth');
+        const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
+
+        // Check if session exists
+        const session = db.getSessionByToken(refreshToken);
+        if (!session) {
+            return res.status(401).json({
+                success: false,
+                error: 'Invalid session'
+            });
+        }
+
+        // Get user
+        const user = db.getUserById(decoded.id);
+        if (!user || !user.isActive) {
+            return res.status(401).json({
+                success: false,
+                error: 'User not found or inactive'
+            });
+        }
+
+        // Generate new access token
+        const { accessToken } = generateTokens(user);
+
+        // Update session activity
+        db.updateSessionActivity(refreshToken);
+
+        res.cookie('accessToken', accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 15 * 60 * 1000,
+            sameSite: 'strict'
+        });
+
+        res.json({ success: true });
+    } catch (error) {
+        res.status(401).json({
+            success: false,
+            error: 'Invalid or expired refresh token'
+        });
+    }
+});
+
+// ===========================================
+// USER MANAGEMENT ROUTES (Admin Only)
+// ===========================================
+
+// Route: Get all users
+app.get('/api/users', verifyToken, requireRole('admin'), (req, res) => {
+    try {
+        const users = db.getAllUsers().map(u => ({
+            id: u.id,
+            username: u.username,
+            email: u.email,
+            role: u.role,
+            isActive: u.isActive,
+            createdAt: u.createdAt,
+            lastLogin: u.lastLogin
+        }));
+
+        res.json({ success: true, users });
+    } catch (error) {
+        console.error('Error fetching users:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Get current user info
+app.get('/api/users/me', verifyToken, (req, res) => {
+    try {
+        const user = db.getUserById(req.user.id);
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        res.json({
+            success: true,
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                role: user.role,
+                theme: user.theme,
+                permissions: user.permissions,
+                createdAt: user.createdAt,
+                lastLogin: user.lastLogin
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Update user
+app.put('/api/users/:userId', verifyToken, requireRole('admin'), async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { email, role, isActive, permissions } = req.body;
+
+        const result = db.updateUser(parseInt(userId), {
+            email,
+            role,
+            isActive,
+            permissions
+        });
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        db.addAuditLog(
+            req.user.id,
+            req.user.username,
+            'USER_UPDATED',
+            'users',
+            { userId, changes: { email, role, isActive } },
+            req.ip
+        );
+
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Delete user
+app.delete('/api/users/:userId', verifyToken, requireRole('admin'), (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        // Prevent deleting yourself
+        if (parseInt(userId) === req.user.id) {
+            return res.status(400).json({
+                success: false,
+                error: 'Cannot delete your own account'
+            });
+        }
+
+        const user = db.getUserById(parseInt(userId));
+        const result = db.deleteUser(parseInt(userId));
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        // Delete user sessions
+        db.deleteUserSessions(parseInt(userId));
+
+        db.addAuditLog(
+            req.user.id,
+            req.user.username,
+            'USER_DELETED',
+            'users',
+            { deletedUser: user.username },
+            req.ip
+        );
+
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Update user theme
+app.put('/api/users/me/theme', verifyToken, (req, res) => {
+    try {
+        const { theme } = req.body;
+
+        if (!['light', 'dark'].includes(theme)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Theme must be "light" or "dark"'
+            });
+        }
+
+        const result = db.updateUserTheme(req.user.id, theme);
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Get audit log (admin only)
+app.get('/api/audit-log', verifyToken, requireRole('admin'), (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 100;
+        const auditLog = db.getAuditLog(limit);
+
+        res.json({ success: true, auditLog });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ===========================================
+// PROTECTED ROUTES - DASHBOARD
+// ===========================================
+
 // Route: Dashboard Home
-app.get('/', (req, res) => {
+app.get('/', verifyToken, (req, res) => {
     const stats = db.getStats();
     const settings = db.getSettings();
     const recentActivity = db.getRecentActivity(20);
-    
+
     res.render('dashboard', {
         stats,
         settings,
         recentActivity,
         sharkTankActive: sharkTankJob !== null,
-        watchlistActive: watchlistJob !== null
+        watchlistActive: watchlistJob !== null,
+        user: req.user
     });
 });
 
 // Route: Settings Page
-app.get('/settings', (req, res) => {
+app.get('/settings', verifyToken, requireRole('admin', 'manager'), (req, res) => {
     const settings = db.getSettings();
-    res.render('settings', { settings });
+    res.render('settings', { settings, user: req.user });
 });
 
 // Route: Update Settings
-app.post('/api/settings', async (req, res) => {
+app.post('/api/settings', verifyToken, requireRole('admin'), async (req, res) => {
     try {
         const {
             logixxUsername,
@@ -109,7 +570,7 @@ app.post('/api/settings', async (req, res) => {
 });
 
 // Route: Manual Scrape
-app.post('/api/scrape', async (req, res) => {
+app.post('/api/scrape', verifyToken, requireRole('admin', 'manager'), async (req, res) => {
     try {
         const { pages = 1 } = req.body;
         const settings = db.getSettings();
@@ -142,7 +603,7 @@ app.post('/api/scrape', async (req, res) => {
 });
 
 // Route: Export CSV
-app.post('/api/export-csv', async (req, res) => {
+app.post('/api/export-csv', verifyToken, async (req, res) => {
     try {
         const files = db.getAllFiles();
         const csvPath = await csvExporter.generateCSV(files);
@@ -161,7 +622,7 @@ app.post('/api/export-csv', async (req, res) => {
 });
 
 // Route: Bulk Assignment
-app.post('/api/bulk-assign', async (req, res) => {
+app.post('/api/bulk-assign', verifyToken, requireRole('admin', 'manager'), async (req, res) => {
     try {
         const { identifiers } = req.body;
         const settings = db.getSettings();
@@ -206,7 +667,7 @@ app.post('/api/bulk-assign', async (req, res) => {
 });
 
 // Route: Add to Watchlist
-app.post('/api/watchlist/add', (req, res) => {
+app.post('/api/watchlist/add', verifyToken, (req, res) => {
     try {
         const { identifier, type } = req.body;
         db.addToWatchlist(identifier, type);
@@ -218,7 +679,7 @@ app.post('/api/watchlist/add', (req, res) => {
 });
 
 // Route: Remove from Watchlist
-app.post('/api/watchlist/remove/:id', (req, res) => {
+app.post('/api/watchlist/remove/:id', verifyToken, (req, res) => {
     try {
         const { id } = req.params;
         db.removeFromWatchlist(parseInt(id));
@@ -230,7 +691,7 @@ app.post('/api/watchlist/remove/:id', (req, res) => {
 });
 
 // Route: Get Watchlist
-app.get('/api/watchlist', (req, res) => {
+app.get('/api/watchlist', verifyToken, (req, res) => {
     try {
         const watchlist = db.getWatchlist();
         res.json({ success: true, watchlist });
@@ -240,7 +701,7 @@ app.get('/api/watchlist', (req, res) => {
 });
 
 // Route: Get Activity Log
-app.get('/api/activity', (req, res) => {
+app.get('/api/activity', verifyToken, (req, res) => {
     try {
         const limit = req.query.limit || 50;
         const activity = db.getRecentActivity(parseInt(limit));
@@ -253,7 +714,7 @@ app.get('/api/activity', (req, res) => {
 // ========== TWILIO ROUTES ==========
 
 // Route: Twilio Page
-app.get('/twilio', (req, res) => {
+app.get('/twilio', verifyToken, (req, res) => {
     const stats = db.getStats();
     const settings = db.getSettings();
     const smsHistory = db.getSMSHistory(50);
@@ -266,12 +727,13 @@ app.get('/twilio', (req, res) => {
         smsHistory,
         callHistory,
         recentActivity,
-        twilioConfigured: twilioService && twilioService.isConfigured()
+        twilioConfigured: twilioService && twilioService.isConfigured(),
+        user: req.user
     });
 });
 
 // Route: Send SMS
-app.post('/api/twilio/sms/send', async (req, res) => {
+app.post('/api/twilio/sms/send', verifyToken, async (req, res) => {
     try {
         const { to, message } = req.body;
 
@@ -314,7 +776,7 @@ app.post('/api/twilio/sms/send', async (req, res) => {
 });
 
 // Route: Send Bulk SMS
-app.post('/api/twilio/sms/bulk', async (req, res) => {
+app.post('/api/twilio/sms/bulk', verifyToken, async (req, res) => {
     try {
         const { recipients, message } = req.body;
 
@@ -363,7 +825,7 @@ app.post('/api/twilio/sms/bulk', async (req, res) => {
 });
 
 // Route: Make Call
-app.post('/api/twilio/call/make', async (req, res) => {
+app.post('/api/twilio/call/make', verifyToken, async (req, res) => {
     try {
         const { to, message } = req.body;
 
@@ -406,7 +868,7 @@ app.post('/api/twilio/call/make', async (req, res) => {
 });
 
 // Route: Make Bulk Calls
-app.post('/api/twilio/call/bulk', async (req, res) => {
+app.post('/api/twilio/call/bulk', verifyToken, async (req, res) => {
     try {
         const { recipients, message } = req.body;
 
@@ -455,7 +917,7 @@ app.post('/api/twilio/call/bulk', async (req, res) => {
 });
 
 // Route: Get SMS History
-app.get('/api/twilio/sms/history', (req, res) => {
+app.get('/api/twilio/sms/history', verifyToken, (req, res) => {
     try {
         const limit = req.query.limit || 50;
         const history = db.getSMSHistory(parseInt(limit));
@@ -466,7 +928,7 @@ app.get('/api/twilio/sms/history', (req, res) => {
 });
 
 // Route: Get Call History
-app.get('/api/twilio/call/history', (req, res) => {
+app.get('/api/twilio/call/history', verifyToken, (req, res) => {
     try {
         const limit = req.query.limit || 50;
         const history = db.getCallHistory(parseInt(limit));
@@ -477,7 +939,7 @@ app.get('/api/twilio/call/history', (req, res) => {
 });
 
 // Route: Test Twilio Credentials
-app.post('/api/twilio/test', async (req, res) => {
+app.post('/api/twilio/test', verifyToken, requireRole('admin'), async (req, res) => {
     try {
         if (!twilioService || !twilioService.isConfigured()) {
             return res.status(400).json({ success: false, error: 'Twilio is not configured' });
@@ -491,7 +953,7 @@ app.post('/api/twilio/test', async (req, res) => {
 });
 
 // Route: Send SMS to LOGIXX Clients
-app.post('/api/twilio/sms/send-to-clients', async (req, res) => {
+app.post('/api/twilio/sms/send-to-clients', verifyToken, async (req, res) => {
     try {
         const { fileIds, message } = req.body;
 
@@ -696,7 +1158,7 @@ app.post('/api/n8n/log', (req, res) => {
 });
 
 // Route: Toggle Monitors
-app.post('/api/monitor/toggle/:type', async (req, res) => {
+app.post('/api/monitor/toggle/:type', verifyToken, requireRole('admin', 'manager'), async (req, res) => {
     try {
         const { type } = req.params;
         const { enabled } = req.body;
@@ -820,6 +1282,80 @@ async function restartMonitors() {
     }
 }
 
+// ===========================================
+// FIRST ADMIN SETUP ROUTE (Special - No Auth Required)
+// ===========================================
+
+// Route: Setup First Admin User (only works if no users exist)
+app.post('/api/setup/first-admin', async (req, res) => {
+    try {
+        const users = db.getAllUsers();
+
+        // Only allow this if no users exist
+        if (users.length > 0) {
+            return res.status(403).json({
+                success: false,
+                error: 'Setup already completed. Please login.'
+            });
+        }
+
+        const { username, password, email } = req.body;
+
+        if (!username || !password) {
+            return res.status(400).json({
+                success: false,
+                error: 'Username and password are required'
+            });
+        }
+
+        // Hash password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Create first admin user
+        const result = db.createUser({
+            username,
+            password: hashedPassword,
+            email: email || '',
+            role: 'admin',
+            permissions: {},
+            createdBy: 'system'
+        });
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        db.addActivity('First admin created', `Admin user ${username} created`, 'success');
+        db.addAuditLog(result.user.id, username, 'FIRST_ADMIN_CREATED', 'setup', {}, req.ip);
+
+        res.json({
+            success: true,
+            message: 'Admin user created successfully. Please login.',
+            user: {
+                id: result.user.id,
+                username: result.user.username
+            }
+        });
+    } catch (error) {
+        console.error('First admin setup error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'An error occurred during setup'
+        });
+    }
+});
+
+// Route: Check if setup is needed
+app.get('/api/setup/needed', (req, res) => {
+    const users = db.getAllUsers();
+    res.json({ setupNeeded: users.length === 0 });
+});
+
+// ===========================================
+// ERROR HANDLER (Must be last)
+// ===========================================
+app.use(errorHandler);
+
 // Initialize on startup
 async function initialize() {
     try {
@@ -837,15 +1373,35 @@ async function initialize() {
             });
         }
 
+        // Check if we need to create first admin
+        const users = db.getAllUsers();
+        if (users.length === 0) {
+            console.log('⚠️  No users found. Please navigate to http://localhost:' + PORT + ' to create the first admin user.');
+        }
+
+        // Cleanup expired sessions on startup
+        const cleanedSessions = db.cleanupExpiredSessions();
+        if (cleanedSessions > 0) {
+            console.log(`Cleaned up ${cleanedSessions} expired sessions`);
+        }
+
+        // Start session cleanup interval (every hour)
+        setInterval(() => {
+            const cleaned = db.cleanupExpiredSessions();
+            if (cleaned > 0) {
+                console.log(`Cleaned up ${cleaned} expired sessions`);
+            }
+        }, 60 * 60 * 1000);
+
         // Start monitors
         await restartMonitors();
 
         // Initialize Twilio
         initializeTwilio();
 
-        console.log('System initialized successfully');
+        console.log('✅ System initialized successfully');
     } catch (error) {
-        console.error('Initialization error:', error);
+        console.error('❌ Initialization error:', error);
     }
 }
 

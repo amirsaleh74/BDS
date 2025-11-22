@@ -14,6 +14,9 @@ class Database {
         this.emailTrackingFile = path.join(this.dataDir, 'email-tracking.json');
         this.callDispositionsFile = path.join(this.dataDir, 'call-dispositions.json');
         this.dncListFile = path.join(this.dataDir, 'dnc-list.json');
+        this.usersFile = path.join(this.dataDir, 'users.json');
+        this.sessionsFile = path.join(this.dataDir, 'sessions.json');
+        this.auditLogFile = path.join(this.dataDir, 'audit-log.json');
 
         this.init();
     }
@@ -54,6 +57,15 @@ class Database {
         }
         if (!fs.existsSync(this.dncListFile)) {
             this.saveData(this.dncListFile, []);
+        }
+        if (!fs.existsSync(this.usersFile)) {
+            this.saveData(this.usersFile, []);
+        }
+        if (!fs.existsSync(this.sessionsFile)) {
+            this.saveData(this.sessionsFile, []);
+        }
+        if (!fs.existsSync(this.auditLogFile)) {
+            this.saveData(this.auditLogFile, []);
         }
     }
 
@@ -518,6 +530,194 @@ class Database {
 
     clearDNCList() {
         return this.saveData(this.dncListFile, []);
+    }
+
+    // User Management Methods
+    getAllUsers() {
+        return this.loadData(this.usersFile) || [];
+    }
+
+    getUserById(userId) {
+        const users = this.getAllUsers();
+        return users.find(u => u.id === userId);
+    }
+
+    getUserByUsername(username) {
+        const users = this.getAllUsers();
+        return users.find(u => u.username === username);
+    }
+
+    createUser(userData) {
+        const users = this.getAllUsers();
+
+        // Check if username already exists
+        const exists = users.find(u => u.username === userData.username);
+        if (exists) {
+            return { success: false, error: 'Username already exists' };
+        }
+
+        const newUser = {
+            id: Date.now(),
+            username: userData.username,
+            password: userData.password, // Should be hashed before calling this
+            role: userData.role || 'agent',
+            email: userData.email || '',
+            isActive: true,
+            permissions: userData.permissions || {},
+            theme: 'light',
+            twoFactorEnabled: false,
+            createdAt: new Date().toISOString(),
+            lastLogin: null,
+            createdBy: userData.createdBy || 'system'
+        };
+
+        users.push(newUser);
+        this.saveData(this.usersFile, users);
+
+        return { success: true, user: newUser };
+    }
+
+    updateUser(userId, updates) {
+        const users = this.getAllUsers();
+        const userIndex = users.findIndex(u => u.id === userId);
+
+        if (userIndex === -1) {
+            return { success: false, error: 'User not found' };
+        }
+
+        users[userIndex] = {
+            ...users[userIndex],
+            ...updates,
+            updatedAt: new Date().toISOString()
+        };
+
+        this.saveData(this.usersFile, users);
+        return { success: true, user: users[userIndex] };
+    }
+
+    deleteUser(userId) {
+        const users = this.getAllUsers();
+        const filtered = users.filter(u => u.id !== userId);
+
+        if (users.length === filtered.length) {
+            return { success: false, error: 'User not found' };
+        }
+
+        this.saveData(this.usersFile, filtered);
+        return { success: true };
+    }
+
+    updateUserTheme(userId, theme) {
+        return this.updateUser(userId, { theme });
+    }
+
+    updateLastLogin(userId) {
+        return this.updateUser(userId, { lastLogin: new Date().toISOString() });
+    }
+
+    // Session Management Methods
+    getAllSessions() {
+        return this.loadData(this.sessionsFile) || [];
+    }
+
+    createSession(userId, token, expiresAt) {
+        const sessions = this.getAllSessions();
+
+        const newSession = {
+            id: Date.now(),
+            userId: userId,
+            token: token,
+            expiresAt: expiresAt,
+            createdAt: new Date().toISOString(),
+            lastActivity: new Date().toISOString()
+        };
+
+        sessions.push(newSession);
+        this.saveData(this.sessionsFile, sessions);
+
+        return newSession;
+    }
+
+    getSessionByToken(token) {
+        const sessions = this.getAllSessions();
+        return sessions.find(s => s.token === token);
+    }
+
+    updateSessionActivity(token) {
+        const sessions = this.getAllSessions();
+        const sessionIndex = sessions.findIndex(s => s.token === token);
+
+        if (sessionIndex !== -1) {
+            sessions[sessionIndex].lastActivity = new Date().toISOString();
+            this.saveData(this.sessionsFile, sessions);
+        }
+    }
+
+    deleteSession(token) {
+        const sessions = this.getAllSessions();
+        const filtered = sessions.filter(s => s.token !== token);
+        this.saveData(this.sessionsFile, filtered);
+    }
+
+    deleteUserSessions(userId) {
+        const sessions = this.getAllSessions();
+        const filtered = sessions.filter(s => s.userId !== userId);
+        this.saveData(this.sessionsFile, filtered);
+    }
+
+    cleanupExpiredSessions() {
+        const sessions = this.getAllSessions();
+        const now = new Date().toISOString();
+        const valid = sessions.filter(s => s.expiresAt > now);
+
+        const removedCount = sessions.length - valid.length;
+        if (removedCount > 0) {
+            this.saveData(this.sessionsFile, valid);
+        }
+
+        return removedCount;
+    }
+
+    // Audit Log Methods
+    getAuditLog(limit = 100) {
+        const log = this.loadData(this.auditLogFile) || [];
+        return log.slice(0, limit);
+    }
+
+    addAuditLog(userId, username, action, resource, details = {}, ipAddress = null) {
+        const log = this.loadData(this.auditLogFile) || [];
+
+        log.unshift({
+            id: Date.now(),
+            userId: userId,
+            username: username,
+            action: action,
+            resource: resource,
+            details: details,
+            ipAddress: ipAddress,
+            timestamp: new Date().toISOString()
+        });
+
+        // Keep only last 5000 audit logs
+        const trimmed = log.slice(0, 5000);
+
+        return this.saveData(this.auditLogFile, trimmed);
+    }
+
+    getAuditLogByUser(userId, limit = 50) {
+        const log = this.loadData(this.auditLogFile) || [];
+        const userLog = log.filter(entry => entry.userId === userId);
+        return userLog.slice(0, limit);
+    }
+
+    getAuditLogByAction(action, limit = 50) {
+        const log = this.loadData(this.auditLogFile) || [];
+        const actionLog = log.filter(entry => entry.action === action);
+        return actionLog.slice(0, limit);
+    }
+
+    clearAuditLog() {
+        return this.saveData(this.auditLogFile, []);
     }
 }
 
