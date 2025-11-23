@@ -501,6 +501,238 @@ app.get('/api/audit-log', verifyToken, requireRole('admin'), (req, res) => {
 });
 
 // ===========================================
+// CREDIT REPORT API ROUTES
+// ===========================================
+
+// Route: Upload and analyze credit report
+app.post('/api/credit-reports/upload', verifyToken, strictLimiter, async (req, res) => {
+    try {
+        const { clientId, reportData } = req.body;
+
+        if (!clientId || !reportData) {
+            return res.status(400).json({
+                success: false,
+                error: 'Client ID and report data are required'
+            });
+        }
+
+        // Analyze the credit report
+        const CreditAnalyzer = require('./utils/credit-analyzer');
+        const analyzer = new CreditAnalyzer(reportData);
+        const analysis = analyzer.analyze();
+
+        // Save to database
+        const result = db.saveCreditReport(clientId, {
+            ...reportData,
+            generatedBy: req.user.username
+        }, analysis);
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        // Log activity
+        db.addActivity(
+            'Credit report analyzed',
+            `Report generated for client ${clientId} by ${req.user.username}`,
+            'success'
+        );
+
+        db.addAuditLog(
+            req.user.id,
+            req.user.username,
+            'CREDIT_REPORT_CREATED',
+            'credit-reports',
+            { clientId, reportId: result.report.id },
+            req.ip
+        );
+
+        res.json({
+            success: true,
+            reportId: result.report.id,
+            analysis: analysis
+        });
+    } catch (error) {
+        console.error('Error analyzing credit report:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Get all credit reports
+app.get('/api/credit-reports', verifyToken, (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 100;
+        const reports = db.getAllCreditReports(limit);
+
+        res.json({ success: true, reports });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Get credit report by ID
+app.get('/api/credit-reports/:reportId', verifyToken, (req, res) => {
+    try {
+        const { reportId } = req.params;
+        const report = db.getCreditReport(parseInt(reportId));
+
+        if (!report) {
+            return res.status(404).json({
+                success: false,
+                error: 'Report not found'
+            });
+        }
+
+        res.json({ success: true, report });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Get credit reports for a specific client
+app.get('/api/credit-reports/client/:clientId', verifyToken, (req, res) => {
+    try {
+        const { clientId } = req.params;
+        const limit = parseInt(req.query.limit) || 10;
+        const reports = db.getClientCreditReports(clientId, limit);
+
+        res.json({ success: true, reports });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Generate HTML report
+app.get('/api/credit-reports/:reportId/html', verifyToken, (req, res) => {
+    try {
+        const { reportId } = req.params;
+        const result = db.generateReportHTML(parseInt(reportId));
+
+        if (!result.success) {
+            return res.status(404).json(result);
+        }
+
+        // Log access
+        db.addAuditLog(
+            req.user.id,
+            req.user.username,
+            'REPORT_VIEWED',
+            'credit-reports',
+            { reportId },
+            req.ip
+        );
+
+        // Send HTML response
+        res.setHeader('Content-Type', 'text/html');
+        res.send(result.html);
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Regenerate report analysis
+app.post('/api/credit-reports/:reportId/regenerate', verifyToken, strictLimiter, (req, res) => {
+    try {
+        const { reportId } = req.params;
+        const report = db.getCreditReport(parseInt(reportId));
+
+        if (!report) {
+            return res.status(404).json({
+                success: false,
+                error: 'Report not found'
+            });
+        }
+
+        // Re-analyze the credit report
+        const CreditAnalyzer = require('./utils/credit-analyzer');
+        const analyzer = new CreditAnalyzer(report.reportData);
+        const analysis = analyzer.analyze();
+
+        // Update the report
+        const result = db.updateCreditReport(parseInt(reportId), {
+            analysis: analysis,
+            regeneratedBy: req.user.username
+        });
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        db.addAuditLog(
+            req.user.id,
+            req.user.username,
+            'CREDIT_REPORT_REGENERATED',
+            'credit-reports',
+            { reportId },
+            req.ip
+        );
+
+        res.json({
+            success: true,
+            analysis: analysis
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Delete credit report (admin only)
+app.delete('/api/credit-reports/:reportId', verifyToken, requireRole('admin'), (req, res) => {
+    try {
+        const { reportId } = req.params;
+        const report = db.getCreditReport(parseInt(reportId));
+
+        if (!report) {
+            return res.status(404).json({
+                success: false,
+                error: 'Report not found'
+            });
+        }
+
+        const result = db.deleteCreditReport(parseInt(reportId));
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        db.addAuditLog(
+            req.user.id,
+            req.user.username,
+            'CREDIT_REPORT_DELETED',
+            'credit-reports',
+            { reportId, clientId: report.clientId },
+            req.ip
+        );
+
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Search credit reports
+app.get('/api/credit-reports/search/:query', verifyToken, (req, res) => {
+    try {
+        const { query } = req.params;
+        const reports = db.searchCreditReports(query);
+
+        res.json({ success: true, reports });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Get credit report statistics
+app.get('/api/credit-reports-stats', verifyToken, (req, res) => {
+    try {
+        const stats = db.getCreditReportStats();
+        res.json({ success: true, stats });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ===========================================
 // PROTECTED ROUTES - DASHBOARD
 // ===========================================
 
@@ -524,6 +756,11 @@ app.get('/', verifyToken, (req, res) => {
 app.get('/settings', verifyToken, requireRole('admin', 'manager'), (req, res) => {
     const settings = db.getSettings();
     res.render('settings', { settings, user: req.user });
+});
+
+// Route: Credit Reports Page
+app.get('/credit-reports', verifyToken, (req, res) => {
+    res.render('credit-reports', { user: req.user });
 });
 
 // Route: Update Settings

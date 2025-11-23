@@ -17,6 +17,7 @@ class Database {
         this.usersFile = path.join(this.dataDir, 'users.json');
         this.sessionsFile = path.join(this.dataDir, 'sessions.json');
         this.auditLogFile = path.join(this.dataDir, 'audit-log.json');
+        this.creditReportsFile = path.join(this.dataDir, 'credit-reports.json');
 
         this.init();
     }
@@ -66,6 +67,9 @@ class Database {
         }
         if (!fs.existsSync(this.auditLogFile)) {
             this.saveData(this.auditLogFile, []);
+        }
+        if (!fs.existsSync(this.creditReportsFile)) {
+            this.saveData(this.creditReportsFile, []);
         }
     }
 
@@ -718,6 +722,146 @@ class Database {
 
     clearAuditLog() {
         return this.saveData(this.auditLogFile, []);
+    }
+
+    // Credit Report Management Methods
+    getAllCreditReports(limit = 100) {
+        const reports = this.loadData(this.creditReportsFile) || [];
+        return reports.slice(0, limit);
+    }
+
+    getCreditReport(reportId) {
+        const reports = this.loadData(this.creditReportsFile) || [];
+        return reports.find(r => r.id === reportId);
+    }
+
+    getClientCreditReports(clientId, limit = 10) {
+        const reports = this.loadData(this.creditReportsFile) || [];
+        const clientReports = reports.filter(r => r.clientId === clientId);
+        return clientReports.slice(0, limit);
+    }
+
+    saveCreditReport(clientId, reportData, analysis) {
+        const reports = this.loadData(this.creditReportsFile) || [];
+
+        const newReport = {
+            id: Date.now(),
+            clientId: clientId,
+            reportData: reportData,
+            analysis: analysis,
+            generatedBy: reportData.generatedBy || 'system',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            status: 'active'
+        };
+
+        reports.unshift(newReport);
+
+        // Keep only last 1000 reports
+        const trimmed = reports.slice(0, 1000);
+
+        this.saveData(this.creditReportsFile, trimmed);
+        return { success: true, report: newReport };
+    }
+
+    updateCreditReport(reportId, updates) {
+        const reports = this.loadData(this.creditReportsFile) || [];
+        const reportIndex = reports.findIndex(r => r.id === reportId);
+
+        if (reportIndex === -1) {
+            return { success: false, error: 'Report not found' };
+        }
+
+        reports[reportIndex] = {
+            ...reports[reportIndex],
+            ...updates,
+            updatedAt: new Date().toISOString()
+        };
+
+        this.saveData(this.creditReportsFile, reports);
+        return { success: true, report: reports[reportIndex] };
+    }
+
+    deleteCreditReport(reportId) {
+        const reports = this.loadData(this.creditReportsFile) || [];
+        const filtered = reports.filter(r => r.id !== reportId);
+
+        if (reports.length === filtered.length) {
+            return { success: false, error: 'Report not found' };
+        }
+
+        this.saveData(this.creditReportsFile, filtered);
+        return { success: true };
+    }
+
+    generateReportHTML(reportId) {
+        const report = this.getCreditReport(reportId);
+        if (!report) {
+            return { success: false, error: 'Report not found' };
+        }
+
+        try {
+            const ReportGenerator = require('../utils/report-generator');
+            const generator = new ReportGenerator(report.analysis);
+            const html = generator.generateHTML();
+
+            return { success: true, html: html };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    // Search and filter methods for credit reports
+    searchCreditReports(query) {
+        const reports = this.loadData(this.creditReportsFile) || [];
+        const lowercaseQuery = query.toLowerCase();
+
+        return reports.filter(r => {
+            const clientName = r.reportData?.client?.name?.toLowerCase() || '';
+            const clientId = r.clientId?.toString() || '';
+
+            return clientName.includes(lowercaseQuery) ||
+                   clientId.includes(lowercaseQuery);
+        });
+    }
+
+    getCreditReportStats() {
+        const reports = this.loadData(this.creditReportsFile) || [];
+
+        if (reports.length === 0) {
+            return {
+                totalReports: 0,
+                avgTotalDebt: 0,
+                avgInterestRate: 0,
+                avgSettlementSavings: 0,
+                reportsThisMonth: 0
+            };
+        }
+
+        const now = new Date();
+        const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        const reportsThisMonth = reports.filter(r => {
+            const reportDate = new Date(r.createdAt);
+            return reportDate >= thisMonth;
+        }).length;
+
+        const totalDebt = reports.reduce((sum, r) => sum + (r.analysis?.metrics?.totalDebt || 0), 0);
+        const avgTotalDebt = totalDebt / reports.length;
+
+        const totalInterestRate = reports.reduce((sum, r) => sum + (r.analysis?.metrics?.avgInterestRate || 0), 0);
+        const avgInterestRate = totalInterestRate / reports.length;
+
+        const totalSavings = reports.reduce((sum, r) => sum + (r.analysis?.metrics?.totalSavings || 0), 0);
+        const avgSettlementSavings = totalSavings / reports.length;
+
+        return {
+            totalReports: reports.length,
+            avgTotalDebt: Math.round(avgTotalDebt),
+            avgInterestRate: avgInterestRate.toFixed(2),
+            avgSettlementSavings: Math.round(avgSettlementSavings),
+            reportsThisMonth: reportsThisMonth
+        };
     }
 }
 

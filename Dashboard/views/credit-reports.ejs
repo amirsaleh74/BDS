@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credit Reports - LOGIXX Dashboard</title>
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/theme.css">
+    <style>
+        .credit-reports-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .page-header {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .page-header h1 {
+            margin: 0 0 10px 0;
+            font-size: 32px;
+        }
+
+        .page-header p {
+            margin: 0;
+            opacity: 0.9;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-primary);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: var(--shadow-sm);
+            transition: all var(--transition-speed);
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .stat-card .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--accent-primary);
+            margin: 10px 0;
+        }
+
+        .stat-card .stat-label {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .actions-bar {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all var(--transition-speed);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 2px solid var(--border-primary);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--accent-primary);
+        }
+
+        .search-box {
+            flex: 1;
+            min-width: 250px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid var(--border-primary);
+            border-radius: 8px;
+            font-size: 14px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+
+        .reports-list {
+            background: var(--bg-card);
+            border: 1px solid var(--border-primary);
+            border-radius: 12px;
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+        }
+
+        .report-item {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-primary);
+            transition: background var(--transition-speed);
+        }
+
+        .report-item:last-child {
+            border-bottom: none;
+        }
+
+        .report-item:hover {
+            background: var(--bg-hover);
+        }
+
+        .report-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 12px;
+        }
+
+        .report-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .report-date {
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        .report-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .detail-label {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            margin-bottom: 4px;
+        }
+
+        .detail-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .report-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn-sm {
+            padding: 6px 14px;
+            font-size: 13px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            color: var(--text-primary);
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: var(--text-tertiary);
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .close-btn:hover {
+            color: var(--error);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid var(--border-primary);
+            border-radius: 8px;
+            font-size: 14px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .form-group textarea {
+            min-height: 200px;
+            font-family: monospace;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+
+        .alert {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert-success {
+            background: var(--success-bg);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+
+        .alert-error {
+            background: var(--error-bg);
+            color: var(--error);
+            border: 1px solid var(--error);
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+            color: var(--text-tertiary);
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid var(--border-primary);
+            border-top: 4px solid var(--accent-primary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-tertiary);
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        @media (max-width: 768px) {
+            .report-header {
+                flex-direction: column;
+            }
+
+            .report-actions {
+                margin-top: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- User Info Badge and Theme Toggle will be injected by JS -->
+
+    <div class="credit-reports-container">
+        <div class="page-header">
+            <h1>Credit Report Intelligence</h1>
+            <p>Analyze credit reports and generate client-facing settlement comparisons</p>
+        </div>
+
+        <!-- Statistics Dashboard -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Reports</div>
+                <div class="stat-value" id="totalReports">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Total Debt</div>
+                <div class="stat-value" id="avgDebt">$0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Interest Rate</div>
+                <div class="stat-value" id="avgRate">0%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Savings</div>
+                <div class="stat-value" id="avgSavings">$0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Reports This Month</div>
+                <div class="stat-value" id="monthlyReports">0</div>
+            </div>
+        </div>
+
+        <!-- Actions Bar -->
+        <div class="actions-bar">
+            <button class="btn btn-primary" onclick="openUploadModal()">
+                <span>📤</span>
+                <span>Upload Credit Report</span>
+            </button>
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Search by client name or ID..." onkeyup="searchReports()">
+            </div>
+            <button class="btn btn-secondary" onclick="refreshReports()">
+                <span>🔄</span>
+                <span>Refresh</span>
+            </button>
+        </div>
+
+        <!-- Reports List -->
+        <div id="reportsList"></div>
+    </div>
+
+    <!-- Upload Modal -->
+    <div id="uploadModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Upload Credit Report</h2>
+                <button class="close-btn" onclick="closeUploadModal()">&times;</button>
+            </div>
+
+            <div id="uploadAlert" class="alert"></div>
+
+            <form id="uploadForm" onsubmit="handleUpload(event)">
+                <div class="form-group">
+                    <label for="clientId">Client ID *</label>
+                    <input type="text" id="clientId" required placeholder="Enter client ID">
+                </div>
+
+                <div class="form-group">
+                    <label for="reportData">Credit Report Data (JSON) *</label>
+                    <textarea id="reportData" required placeholder="Paste the credit report JSON data here..."></textarea>
+                    <small style="color: var(--text-tertiary);">Paste the complete credit report data in JSON format</small>
+                </div>
+
+                <button type="submit" class="btn btn-primary" style="width: 100%;">
+                    <span>📊</span>
+                    <span>Analyze & Generate Report</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script src="/js/theme-switcher.js"></script>
+    <script src="/js/user-info.js"></script>
+    <script>
+        let allReports = [];
+
+        // Load statistics
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/credit-reports-stats', {
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        const stats = data.stats;
+                        document.getElementById('totalReports').textContent = stats.totalReports;
+                        document.getElementById('avgDebt').textContent = '$' + stats.avgTotalDebt.toLocaleString();
+                        document.getElementById('avgRate').textContent = stats.avgInterestRate + '%';
+                        document.getElementById('avgSavings').textContent = '$' + stats.avgSettlementSavings.toLocaleString();
+                        document.getElementById('monthlyReports').textContent = stats.reportsThisMonth;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Load all reports
+        async function loadReports() {
+            const container = document.getElementById('reportsList');
+            container.innerHTML = '<div class="loading show"><div class="spinner"></div><div>Loading reports...</div></div>';
+
+            try {
+                const response = await fetch('/api/credit-reports?limit=100', {
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        allReports = data.reports;
+                        renderReports(allReports);
+                    }
+                } else if (response.status === 401) {
+                    window.location.href = '/login?expired=true';
+                }
+            } catch (error) {
+                console.error('Error loading reports:', error);
+                container.innerHTML = '<div class="alert alert-error show">Failed to load reports</div>';
+            }
+        }
+
+        // Render reports
+        function renderReports(reports) {
+            const container = document.getElementById('reportsList');
+
+            if (reports.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📊</div>
+                        <h3>No credit reports yet</h3>
+                        <p>Upload your first credit report to get started</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = `
+                <div class="reports-list">
+                    ${reports.map(report => `
+                        <div class="report-item">
+                            <div class="report-header">
+                                <div>
+                                    <div class="report-title">Client: ${report.clientId}</div>
+                                    <div class="report-date">Generated ${new Date(report.createdAt).toLocaleString()}</div>
+                                </div>
+                            </div>
+                            <div class="report-details">
+                                <div class="detail-item">
+                                    <div class="detail-label">Total Debt</div>
+                                    <div class="detail-value">$${(report.analysis?.metrics?.totalDebt || 0).toLocaleString()}</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-label">Monthly Payment</div>
+                                    <div class="detail-value">$${(report.analysis?.metrics?.totalMonthlyPayments || 0).toLocaleString()}</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-label">Avg Interest Rate</div>
+                                    <div class="detail-value">${(report.analysis?.metrics?.avgInterestRate || 0).toFixed(2)}%</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-label">Estimated Savings</div>
+                                    <div class="detail-value" style="color: var(--success)">$${(report.analysis?.metrics?.totalSavings || 0).toLocaleString()}</div>
+                                </div>
+                            </div>
+                            <div class="report-actions">
+                                <button class="btn btn-primary btn-sm" onclick="viewReport(${report.id})">
+                                    <span>👁️</span>
+                                    <span>View Report</span>
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="regenerateReport(${report.id})">
+                                    <span>🔄</span>
+                                    <span>Regenerate</span>
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="downloadReport(${report.id})">
+                                    <span>⬇️</span>
+                                    <span>Download</span>
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        // Search reports
+        function searchReports() {
+            const query = document.getElementById('searchInput').value.toLowerCase();
+
+            if (!query) {
+                renderReports(allReports);
+                return;
+            }
+
+            const filtered = allReports.filter(report => {
+                const clientId = report.clientId.toString().toLowerCase();
+                const clientName = report.reportData?.client?.name?.toLowerCase() || '';
+                return clientId.includes(query) || clientName.includes(query);
+            });
+
+            renderReports(filtered);
+        }
+
+        // View report in new tab
+        function viewReport(reportId) {
+            window.open(`/api/credit-reports/${reportId}/html`, '_blank');
+        }
+
+        // Download report
+        function downloadReport(reportId) {
+            const link = document.createElement('a');
+            link.href = `/api/credit-reports/${reportId}/html`;
+            link.download = `credit-report-${reportId}.html`;
+            link.click();
+        }
+
+        // Regenerate report
+        async function regenerateReport(reportId) {
+            if (!confirm('Are you sure you want to regenerate this report?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/credit-reports/${reportId}/regenerate`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    alert('Report regenerated successfully!');
+                    refreshReports();
+                } else {
+                    alert('Failed to regenerate report');
+                }
+            } catch (error) {
+                console.error('Error regenerating report:', error);
+                alert('Error regenerating report');
+            }
+        }
+
+        // Refresh reports
+        function refreshReports() {
+            loadReports();
+            loadStats();
+        }
+
+        // Upload modal functions
+        function openUploadModal() {
+            document.getElementById('uploadModal').classList.add('show');
+        }
+
+        function closeUploadModal() {
+            document.getElementById('uploadModal').classList.remove('show');
+            document.getElementById('uploadForm').reset();
+            document.getElementById('uploadAlert').classList.remove('show');
+        }
+
+        // Handle upload
+        async function handleUpload(event) {
+            event.preventDefault();
+
+            const alertDiv = document.getElementById('uploadAlert');
+            alertDiv.classList.remove('show');
+
+            const clientId = document.getElementById('clientId').value.trim();
+            const reportDataStr = document.getElementById('reportData').value.trim();
+
+            // Validate JSON
+            let reportData;
+            try {
+                reportData = JSON.parse(reportDataStr);
+            } catch (error) {
+                alertDiv.className = 'alert alert-error show';
+                alertDiv.textContent = 'Invalid JSON format. Please check your data.';
+                return;
+            }
+
+            // Submit
+            try {
+                const response = await fetch('/api/credit-reports/upload', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        clientId,
+                        reportData
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    alertDiv.className = 'alert alert-success show';
+                    alertDiv.textContent = 'Credit report analyzed successfully!';
+
+                    // Reset form
+                    document.getElementById('uploadForm').reset();
+
+                    // Refresh data
+                    setTimeout(() => {
+                        closeUploadModal();
+                        refreshReports();
+                    }, 1500);
+                } else {
+                    alertDiv.className = 'alert alert-error show';
+                    alertDiv.textContent = result.error || 'Failed to analyze report';
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
+                alertDiv.className = 'alert alert-error show';
+                alertDiv.textContent = 'Network error. Please try again.';
+            }
+        }
+
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            loadReports();
+            loadStats();
+        });
+
+        // Close modal on outside click
+        document.getElementById('uploadModal').addEventListener('click', (e) => {
+            if (e.target.id === 'uploadModal') {
+                closeUploadModal();
+            }
+        });
+    </script>
+</body>
+</html>
