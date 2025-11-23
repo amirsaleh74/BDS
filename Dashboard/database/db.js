@@ -18,6 +18,9 @@ class Database {
         this.sessionsFile = path.join(this.dataDir, 'sessions.json');
         this.auditLogFile = path.join(this.dataDir, 'audit-log.json');
         this.creditReportsFile = path.join(this.dataDir, 'credit-reports.json');
+        this.leadsFile = path.join(this.dataDir, 'leads.json');
+        this.leadActivitiesFile = path.join(this.dataDir, 'lead-activities.json');
+        this.leadNotesFile = path.join(this.dataDir, 'lead-notes.json');
 
         this.init();
     }
@@ -70,6 +73,15 @@ class Database {
         }
         if (!fs.existsSync(this.creditReportsFile)) {
             this.saveData(this.creditReportsFile, []);
+        }
+        if (!fs.existsSync(this.leadsFile)) {
+            this.saveData(this.leadsFile, []);
+        }
+        if (!fs.existsSync(this.leadActivitiesFile)) {
+            this.saveData(this.leadActivitiesFile, []);
+        }
+        if (!fs.existsSync(this.leadNotesFile)) {
+            this.saveData(this.leadNotesFile, []);
         }
     }
 
@@ -862,6 +874,271 @@ class Database {
             avgSettlementSavings: Math.round(avgSettlementSavings),
             reportsThisMonth: reportsThisMonth
         };
+    }
+
+    // Lead Management Methods
+    getAllLeads(limit = 1000) {
+        const leads = this.loadData(this.leadsFile) || [];
+        return leads.slice(0, limit);
+    }
+
+    getLead(leadId) {
+        const leads = this.loadData(this.leadsFile) || [];
+        return leads.find(l => l.id === leadId);
+    }
+
+    createLead(leadData) {
+        const leads = this.loadData(this.leadsFile) || [];
+
+        const newLead = {
+            id: Date.now(),
+            // Contact Info
+            firstName: leadData.firstName || '',
+            lastName: leadData.lastName || '',
+            email: leadData.email || '',
+            phone: leadData.phone || '',
+            alternatePhone: leadData.alternatePhone || '',
+            address: leadData.address || '',
+            city: leadData.city || '',
+            state: leadData.state || '',
+            zipCode: leadData.zipCode || '',
+
+            // Status & Assignment
+            status: leadData.status || 'new',
+            assignedTo: leadData.assignedTo || null,
+            source: leadData.source || 'manual',
+
+            // Debt Info
+            totalDebt: leadData.totalDebt || 0,
+            monthlyIncome: leadData.monthlyIncome || 0,
+            debtType: leadData.debtType || 'unsecured',
+            creditScore: leadData.creditScore || null,
+
+            // Engagement & Scoring
+            heatScore: 0,
+            qualificationScore: 0,
+            closeProbability: 0,
+            lastContact: null,
+            nextFollowUp: null,
+
+            // Behavioral Tracking
+            emailOpens: 0,
+            emailClicks: 0,
+            smsReplies: 0,
+            callDuration: 0,
+            lastEmailOpen: null,
+            lastLinkClick: null,
+
+            // Tags & Classification
+            tags: leadData.tags || [],
+            hardshipKeywords: [],
+            objections: [],
+
+            // Timestamps
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            createdBy: leadData.createdBy || 'system'
+        };
+
+        leads.unshift(newLead);
+        this.saveData(this.leadsFile, leads);
+
+        return { success: true, lead: newLead };
+    }
+
+    updateLead(leadId, updates) {
+        const leads = this.loadData(this.leadsFile) || [];
+        const leadIndex = leads.findIndex(l => l.id === leadId);
+
+        if (leadIndex === -1) {
+            return { success: false, error: 'Lead not found' };
+        }
+
+        leads[leadIndex] = {
+            ...leads[leadIndex],
+            ...updates,
+            updatedAt: new Date().toISOString()
+        };
+
+        this.saveData(this.leadsFile, leads);
+        return { success: true, lead: leads[leadIndex] };
+    }
+
+    deleteLead(leadId) {
+        const leads = this.loadData(this.leadsFile) || [];
+        const filtered = leads.filter(l => l.id !== leadId);
+
+        if (leads.length === filtered.length) {
+            return { success: false, error: 'Lead not found' };
+        }
+
+        this.saveData(this.leadsFile, filtered);
+        return { success: true };
+    }
+
+    // Lead Activity Tracking
+    addLeadActivity(leadId, activityData) {
+        const activities = this.loadData(this.leadActivitiesFile) || [];
+
+        const newActivity = {
+            id: Date.now(),
+            leadId: leadId,
+            type: activityData.type, // email_sent, sms_sent, call_made, email_opened, link_clicked, etc.
+            description: activityData.description || '',
+            metadata: activityData.metadata || {},
+            userId: activityData.userId || null,
+            username: activityData.username || 'system',
+            timestamp: new Date().toISOString()
+        };
+
+        activities.unshift(newActivity);
+
+        // Keep only last 10,000 activities
+        const trimmed = activities.slice(0, 10000);
+
+        this.saveData(this.leadActivitiesFile, trimmed);
+        return { success: true, activity: newActivity };
+    }
+
+    getLeadActivities(leadId, limit = 100) {
+        const activities = this.loadData(this.leadActivitiesFile) || [];
+        const leadActivities = activities.filter(a => a.leadId === leadId);
+        return leadActivities.slice(0, limit);
+    }
+
+    // Lead Notes
+    addLeadNote(leadId, noteData) {
+        const notes = this.loadData(this.leadNotesFile) || [];
+
+        const newNote = {
+            id: Date.now(),
+            leadId: leadId,
+            note: noteData.note || '',
+            userId: noteData.userId || null,
+            username: noteData.username || 'system',
+            createdAt: new Date().toISOString()
+        };
+
+        notes.unshift(newNote);
+        this.saveData(this.leadNotesFile, notes);
+
+        return { success: true, note: newNote };
+    }
+
+    getLeadNotes(leadId, limit = 100) {
+        const notes = this.loadData(this.leadNotesFile) || [];
+        const leadNotes = notes.filter(n => n.leadId === leadId);
+        return leadNotes.slice(0, limit);
+    }
+
+    // Lead Search & Filter
+    searchLeads(query) {
+        const leads = this.loadData(this.leadsFile) || [];
+        const lowercaseQuery = query.toLowerCase();
+
+        return leads.filter(l => {
+            const firstName = l.firstName?.toLowerCase() || '';
+            const lastName = l.lastName?.toLowerCase() || '';
+            const email = l.email?.toLowerCase() || '';
+            const phone = l.phone || '';
+
+            return firstName.includes(lowercaseQuery) ||
+                   lastName.includes(lowercaseQuery) ||
+                   email.includes(lowercaseQuery) ||
+                   phone.includes(lowercaseQuery);
+        });
+    }
+
+    filterLeadsByStatus(status) {
+        const leads = this.loadData(this.leadsFile) || [];
+        return leads.filter(l => l.status === status);
+    }
+
+    filterLeadsByAssignedUser(userId) {
+        const leads = this.loadData(this.leadsFile) || [];
+        return leads.filter(l => l.assignedTo === userId);
+    }
+
+    // Lead Statistics
+    getLeadStats() {
+        const leads = this.loadData(this.leadsFile) || [];
+
+        if (leads.length === 0) {
+            return {
+                totalLeads: 0,
+                newLeads: 0,
+                contacted: 0,
+                qualified: 0,
+                enrolled: 0,
+                avgDebt: 0,
+                avgHeatScore: 0
+            };
+        }
+
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        const newLeadsToday = leads.filter(l => {
+            const createdDate = new Date(l.createdAt);
+            return createdDate >= today;
+        }).length;
+
+        const statusCounts = leads.reduce((acc, lead) => {
+            acc[lead.status] = (acc[lead.status] || 0) + 1;
+            return acc;
+        }, {});
+
+        const totalDebt = leads.reduce((sum, l) => sum + (l.totalDebt || 0), 0);
+        const avgDebt = totalDebt / leads.length;
+
+        const totalHeatScore = leads.reduce((sum, l) => sum + (l.heatScore || 0), 0);
+        const avgHeatScore = totalHeatScore / leads.length;
+
+        return {
+            totalLeads: leads.length,
+            newLeadsToday: newLeadsToday,
+            newLeads: statusCounts['new'] || 0,
+            contacted: statusCounts['contacted'] || 0,
+            qualified: statusCounts['qualified'] || 0,
+            enrolled: statusCounts['enrolled'] || 0,
+            avgDebt: Math.round(avgDebt),
+            avgHeatScore: avgHeatScore.toFixed(1)
+        };
+    }
+
+    // Update heat score based on engagement
+    updateLeadHeatScore(leadId) {
+        const lead = this.getLead(leadId);
+        if (!lead) return { success: false, error: 'Lead not found' };
+
+        // Calculate heat score based on engagement
+        let score = 0;
+
+        // Email engagement (max 30 points)
+        score += Math.min(lead.emailOpens * 2, 30);
+
+        // Link clicks (max 20 points)
+        score += Math.min(lead.emailClicks * 5, 20);
+
+        // SMS replies (max 25 points)
+        score += Math.min(lead.smsReplies * 5, 25);
+
+        // Call duration (max 25 points)
+        const callMinutes = (lead.callDuration || 0) / 60;
+        score += Math.min(callMinutes * 2, 25);
+
+        // Recency bonus (max 20 points)
+        if (lead.lastContact) {
+            const hoursSinceContact = (Date.now() - new Date(lead.lastContact).getTime()) / (1000 * 60 * 60);
+            if (hoursSinceContact < 24) score += 20;
+            else if (hoursSinceContact < 72) score += 10;
+            else if (hoursSinceContact < 168) score += 5;
+        }
+
+        // Cap at 100
+        const heatScore = Math.min(Math.round(score), 100);
+
+        return this.updateLead(leadId, { heatScore });
     }
 }
 
