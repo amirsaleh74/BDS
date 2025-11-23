@@ -804,6 +804,112 @@ app.post('/api/calculator/settlement', async (req, res) => {
 });
 
 // ===========================================
+// EMAIL TRACKING ROUTES
+// ===========================================
+
+// Route: Email tracking pixel (public - no auth)
+app.get('/api/track/pixel/:trackingId', (req, res) => {
+    try {
+        const { trackingId } = req.params;
+        const EmailTracker = require('./utils/email-tracker');
+        const tracker = new EmailTracker(db);
+
+        // Record the open
+        tracker.recordOpen(trackingId, {
+            userAgent: req.headers['user-agent'],
+            ipAddress: req.ip
+        });
+
+        // Return 1x1 transparent GIF
+        const pixel = Buffer.from(
+            'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+            'base64'
+        );
+
+        res.writeHead(200, {
+            'Content-Type': 'image/gif',
+            'Content-Length': pixel.length,
+            'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        });
+
+        res.end(pixel);
+    } catch (error) {
+        console.error('Tracking pixel error:', error);
+        res.status(500).send('Error');
+    }
+});
+
+// Route: Email link click tracking (public - no auth)
+app.get('/api/track/click/:trackingId', (req, res) => {
+    try {
+        const { trackingId } = req.params;
+        const { url, name } = req.query;
+
+        if (!url) {
+            return res.status(400).send('Missing URL parameter');
+        }
+
+        const EmailTracker = require('./utils/email-tracker');
+        const tracker = new EmailTracker(db);
+
+        // Record the click
+        const result = tracker.recordClick(trackingId, name || 'link', decodeURIComponent(url), {
+            userAgent: req.headers['user-agent'],
+            ipAddress: req.ip
+        });
+
+        if (result.success) {
+            // Redirect to the original URL
+            res.redirect(result.redirectUrl);
+        } else {
+            res.status(404).send('Invalid tracking link');
+        }
+    } catch (error) {
+        console.error('Link tracking error:', error);
+        res.status(500).send('Error');
+    }
+});
+
+// Route: Get email analytics for a lead
+app.get('/api/leads/:leadId/email-analytics', verifyToken, (req, res) => {
+    try {
+        const { leadId } = req.params;
+        const EmailTracker = require('./utils/email-tracker');
+        const tracker = new EmailTracker(db);
+
+        const analytics = tracker.getLeadEmailAnalytics(leadId);
+
+        res.json({
+            success: true,
+            analytics: analytics
+        });
+    } catch (error) {
+        console.error('Email analytics error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Get overall campaign analytics
+app.get('/api/analytics/email-campaigns', verifyToken, requireRole('admin', 'manager'), (req, res) => {
+    try {
+        const EmailTracker = require('./utils/email-tracker');
+        const tracker = new EmailTracker(db);
+
+        const analytics = tracker.getCampaignAnalytics();
+
+        res.json({
+            success: true,
+            analytics: analytics
+        });
+    } catch (error) {
+        console.error('Campaign analytics error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ===========================================
 // LEAD MANAGEMENT ROUTES
 // ===========================================
 
