@@ -763,6 +763,180 @@ app.get('/credit-reports', verifyToken, (req, res) => {
     res.render('credit-reports', { user: req.user });
 });
 
+// Route: Settlement Calculator (PUBLIC - no auth required)
+app.get('/calculator', (req, res) => {
+    res.render('calculator');
+});
+
+// Route: Settlement Calculator API
+app.post('/api/calculator/settlement', async (req, res) => {
+    try {
+        const { totalDebt, monthlyIncome, creditScore, numberOfCreditors } = req.body;
+
+        if (!totalDebt || totalDebt < 1000) {
+            return res.status(400).json({
+                success: false,
+                error: 'Total debt must be at least $1,000'
+            });
+        }
+
+        const SettlementCalculator = require('./utils/settlement-calculator');
+        const calculator = new SettlementCalculator({
+            totalDebt,
+            monthlyIncome: monthlyIncome || 0,
+            creditScore: creditScore || 650,
+            numberOfCreditors: numberOfCreditors || 1
+        });
+
+        const calculation = calculator.calculate();
+
+        // Optionally create an anonymous lead for tracking
+        // (only if they request consultation)
+
+        res.json({
+            success: true,
+            calculation: calculation
+        });
+    } catch (error) {
+        console.error('Calculator error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ===========================================
+// LEAD MANAGEMENT ROUTES
+// ===========================================
+
+// Route: Leads Management Page
+app.get('/leads', verifyToken, (req, res) => {
+    res.render('leads', { user: req.user });
+});
+
+// Route: Get all leads with scoring
+app.get('/api/leads', verifyToken, (req, res) => {
+    try {
+        const leads = db.getAllLeads();
+        const users = db.getAllUsers();
+
+        // Enrich leads with assigned user names
+        const enrichedLeads = leads.map(lead => {
+            const assignedUser = lead.assignedTo ? users.find(u => u.id === lead.assignedTo) : null;
+            return {
+                ...lead,
+                assignedToName: assignedUser ? assignedUser.username : null,
+                qualificationGrade: getQualificationGrade(lead.qualificationScore || 0)
+            };
+        });
+
+        res.json({ success: true, leads: enrichedLeads });
+    } catch (error) {
+        console.error('Error loading leads:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Get single lead
+app.get('/api/leads/:leadId', verifyToken, (req, res) => {
+    try {
+        const { leadId } = req.params;
+        const lead = db.getLead(leadId);
+
+        if (!lead) {
+            return res.status(404).json({ success: false, error: 'Lead not found' });
+        }
+
+        const users = db.getAllUsers();
+        const assignedUser = lead.assignedTo ? users.find(u => u.id === lead.assignedTo) : null;
+
+        const enrichedLead = {
+            ...lead,
+            assignedToName: assignedUser ? assignedUser.username : null,
+            qualificationGrade: getQualificationGrade(lead.qualificationScore || 0)
+        };
+
+        res.json({ success: true, lead: enrichedLead });
+    } catch (error) {
+        console.error('Error loading lead:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Update lead status (for drag and drop)
+app.put('/api/leads/:leadId/status', verifyToken, (req, res) => {
+    try {
+        const { leadId } = req.params;
+        const { status } = req.body;
+
+        const validStatuses = ['new', 'contacted', 'qualified', 'quoted', 'enrolled', 'dead', 'archived'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid status'
+            });
+        }
+
+        const result = db.updateLead(leadId, { status });
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        // Log activity
+        db.addLeadActivity(leadId, {
+            type: 'status_changed',
+            description: `Status changed to ${status}`,
+            metadata: { newStatus: status },
+            userId: req.user.id,
+            username: req.user.username
+        });
+
+        db.addAuditLog(
+            req.user.id,
+            req.user.username,
+            'LEAD_STATUS_UPDATED',
+            'leads',
+            { leadId, status },
+            req.ip
+        );
+
+        res.json(result);
+    } catch (error) {
+        console.error('Error updating lead status:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Get current user info
+app.get('/api/users/me', verifyToken, (req, res) => {
+    try {
+        const user = db.getUserById(req.user.id);
+
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        // Remove sensitive data
+        const { password, ...safeUser } = user;
+
+        res.json({ success: true, user: safeUser });
+    } catch (error) {
+        console.error('Error loading user:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Helper function to get qualification grade
+function getQualificationGrade(score) {
+    if (score >= 90) return 'A+';
+    if (score >= 85) return 'A';
+    if (score >= 80) return 'B+';
+    if (score >= 75) return 'B';
+    if (score >= 70) return 'C+';
+    if (score >= 65) return 'C';
+    if (score >= 60) return 'D';
+    return 'F';
+}
+
 // Route: Update Settings
 app.post('/api/settings', verifyToken, requireRole('admin'), async (req, res) => {
     try {

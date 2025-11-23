@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lead Management | Debt Settlement CRM</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .toolbar {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .view-toggle {
+            display: flex;
+            gap: 5px;
+            background: #f8f9fa;
+            padding: 3px;
+            border-radius: 5px;
+        }
+
+        .view-toggle button {
+            padding: 8px 16px;
+            border: none;
+            background: transparent;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .view-toggle button.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .filters {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .filter-group label {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .filter-group select,
+        .filter-group input {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .search-box {
+            position: relative;
+        }
+
+        .search-box input {
+            padding: 8px 12px 8px 35px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            width: 250px;
+            font-size: 14px;
+        }
+
+        .search-box::before {
+            content: '🔍';
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        /* Pipeline Board Styles */
+        .pipeline-board {
+            display: flex;
+            gap: 15px;
+            overflow-x: auto;
+            padding-bottom: 20px;
+        }
+
+        .pipeline-column {
+            flex: 1;
+            min-width: 300px;
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .column-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .column-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .column-count {
+            background: #f0f0f0;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+        }
+
+        .lead-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-height: 200px;
+        }
+
+        .lead-card {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 12px;
+            cursor: grab;
+            transition: all 0.3s ease;
+        }
+
+        .lead-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+
+        .lead-card.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+
+        .lead-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
+        }
+
+        .lead-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 15px;
+        }
+
+        .lead-scores {
+            display: flex;
+            gap: 5px;
+        }
+
+        .score-badge {
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .score-hot {
+            background: #ff4757;
+            color: white;
+        }
+
+        .score-warm {
+            background: #ffa502;
+            color: white;
+        }
+
+        .score-cool {
+            background: #48dbfb;
+            color: white;
+        }
+
+        .score-cold {
+            background: #95afc0;
+            color: white;
+        }
+
+        .qual-a {
+            background: #26de81;
+            color: white;
+        }
+
+        .qual-b {
+            background: #20bf6b;
+            color: white;
+        }
+
+        .qual-c {
+            background: #fed330;
+            color: #333;
+        }
+
+        .qual-d {
+            background: #fc5c65;
+            color: white;
+        }
+
+        .qual-f {
+            background: #95afc0;
+            color: white;
+        }
+
+        .lead-info {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .lead-info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .lead-tags {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+
+        .tag {
+            padding: 3px 8px;
+            background: #e9ecef;
+            border-radius: 3px;
+            font-size: 11px;
+            color: #495057;
+        }
+
+        .lead-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e9ecef;
+            font-size: 12px;
+            color: #999;
+        }
+
+        .assigned-agent {
+            font-weight: 500;
+            color: #667eea;
+        }
+
+        /* List View Styles */
+        .list-view {
+            display: none;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .list-view.active {
+            display: block;
+        }
+
+        .list-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .list-table thead {
+            background: #f8f9fa;
+        }
+
+        .list-table th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+            border-bottom: 2px solid #dee2e6;
+            font-size: 13px;
+            text-transform: uppercase;
+        }
+
+        .list-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 14px;
+        }
+
+        .list-table tr:hover {
+            background: #f8f9fa;
+            cursor: pointer;
+        }
+
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-new {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .status-contacted {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .status-qualified {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .status-quoted {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        .status-enrolled {
+            background: #e0f2f1;
+            color: #00796b;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .empty-state-text {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+
+        .modal-header {
+            padding: 20px 30px;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-size: 22px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .close-modal {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+        }
+
+        .modal-body {
+            padding: 30px;
+        }
+
+        @media (max-width: 768px) {
+            .pipeline-board {
+                flex-direction: column;
+            }
+
+            .pipeline-column {
+                min-width: 100%;
+            }
+
+            .filters {
+                width: 100%;
+            }
+
+            .filter-group select,
+            .filter-group input {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Lead Management</h1>
+            <div class="header-actions">
+                <button class="btn btn-success" onclick="createNewLead()">+ New Lead</button>
+                <button class="btn btn-secondary" onclick="bulkAssignLeads()">Bulk Assign</button>
+                <a href="/dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+            </div>
+        </div>
+
+        <div class="toolbar">
+            <div class="view-toggle">
+                <button class="active" data-view="pipeline" onclick="switchView('pipeline')">Pipeline</button>
+                <button data-view="list" onclick="switchView('list')">List</button>
+            </div>
+
+            <div class="filters">
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="Search leads..." onkeyup="filterLeads()">
+                </div>
+
+                <div class="filter-group">
+                    <label>Assigned To</label>
+                    <select id="assignedFilter" onchange="filterLeads()">
+                        <option value="">All Agents</option>
+                        <option value="unassigned">Unassigned</option>
+                        <option value="me">My Leads</option>
+                        <!-- Populated dynamically -->
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label>Heat Score</label>
+                    <select id="heatFilter" onchange="filterLeads()">
+                        <option value="">All</option>
+                        <option value="hot">Hot (80+)</option>
+                        <option value="warm">Warm (60-79)</option>
+                        <option value="cool">Cool (40-59)</option>
+                        <option value="cold">Cold (<40)</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label>Qual Grade</label>
+                    <select id="qualFilter" onchange="filterLeads()">
+                        <option value="">All</option>
+                        <option value="A">A (90+)</option>
+                        <option value="B">B (80-89)</option>
+                        <option value="C">C (70-79)</option>
+                        <option value="D">D (60-69)</option>
+                        <option value="F">F (<60)</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label>Sort By</label>
+                    <select id="sortFilter" onchange="filterLeads()">
+                        <option value="closeProbability">Close Probability</option>
+                        <option value="heatScore">Heat Score</option>
+                        <option value="qualificationScore">Qualification Score</option>
+                        <option value="totalDebt">Total Debt</option>
+                        <option value="createdAt">Date Added</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pipeline View -->
+        <div id="pipelineView" class="pipeline-board">
+            <div class="pipeline-column" data-status="new">
+                <div class="column-header">
+                    <span class="column-title">New Leads</span>
+                    <span class="column-count" id="count-new">0</span>
+                </div>
+                <div class="lead-cards" id="column-new" ondrop="drop(event)" ondragover="allowDrop(event)">
+                    <!-- Lead cards inserted here -->
+                </div>
+            </div>
+
+            <div class="pipeline-column" data-status="contacted">
+                <div class="column-header">
+                    <span class="column-title">Contacted</span>
+                    <span class="column-count" id="count-contacted">0</span>
+                </div>
+                <div class="lead-cards" id="column-contacted" ondrop="drop(event)" ondragover="allowDrop(event)">
+                    <!-- Lead cards inserted here -->
+                </div>
+            </div>
+
+            <div class="pipeline-column" data-status="qualified">
+                <div class="column-header">
+                    <span class="column-title">Qualified</span>
+                    <span class="column-count" id="count-qualified">0</span>
+                </div>
+                <div class="lead-cards" id="column-qualified" ondrop="drop(event)" ondragover="allowDrop(event)">
+                    <!-- Lead cards inserted here -->
+                </div>
+            </div>
+
+            <div class="pipeline-column" data-status="quoted">
+                <div class="column-header">
+                    <span class="column-title">Quoted</span>
+                    <span class="column-count" id="count-quoted">0</span>
+                </div>
+                <div class="lead-cards" id="column-quoted" ondrop="drop(event)" ondragover="allowDrop(event)">
+                    <!-- Lead cards inserted here -->
+                </div>
+            </div>
+
+            <div class="pipeline-column" data-status="enrolled">
+                <div class="column-header">
+                    <span class="column-title">Enrolled</span>
+                    <span class="column-count" id="count-enrolled">0</span>
+                </div>
+                <div class="lead-cards" id="column-enrolled" ondrop="drop(event)" ondragover="allowDrop(event)">
+                    <!-- Lead cards inserted here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- List View -->
+        <div id="listView" class="list-view">
+            <table class="list-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Debt</th>
+                        <th>Heat</th>
+                        <th>Qual</th>
+                        <th>Close %</th>
+                        <th>Assigned To</th>
+                        <th>Last Contact</th>
+                    </tr>
+                </thead>
+                <tbody id="listTableBody">
+                    <!-- Rows inserted here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Lead Detail Modal -->
+    <div id="leadModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modalTitle">Lead Details</h2>
+                <button class="close-modal" onclick="closeModal()">×</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- Lead details inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allLeads = [];
+        let filteredLeads = [];
+        let currentUser = null;
+
+        // Load leads on page load
+        async function loadLeads() {
+            try {
+                const response = await fetch('/api/leads');
+                const data = await response.json();
+
+                if (data.success) {
+                    allLeads = data.leads;
+                    filteredLeads = [...allLeads];
+                    renderPipelineView();
+                    renderListView();
+                    loadAgentFilter();
+                }
+            } catch (error) {
+                console.error('Error loading leads:', error);
+            }
+        }
+
+        // Load current user info
+        async function loadCurrentUser() {
+            try {
+                const response = await fetch('/api/users/me');
+                const data = await response.json();
+                if (data.success) {
+                    currentUser = data.user;
+                }
+            } catch (error) {
+                console.error('Error loading user:', error);
+            }
+        }
+
+        // Load agents for filter
+        async function loadAgentFilter() {
+            try {
+                const response = await fetch('/api/users');
+                const data = await response.json();
+
+                if (data.success) {
+                    const select = document.getElementById('assignedFilter');
+                    const agents = data.users.filter(u => u.role === 'agent' || u.role === 'manager');
+
+                    agents.forEach(agent => {
+                        const option = document.createElement('option');
+                        option.value = agent.id;
+                        option.textContent = agent.username;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading agents:', error);
+            }
+        }
+
+        // Render Pipeline View
+        function renderPipelineView() {
+            const statuses = ['new', 'contacted', 'qualified', 'quoted', 'enrolled'];
+
+            statuses.forEach(status => {
+                const column = document.getElementById(`column-${status}`);
+                const count = document.getElementById(`count-${status}`);
+
+                const statusLeads = filteredLeads.filter(lead => lead.status === status);
+                count.textContent = statusLeads.length;
+
+                column.innerHTML = '';
+
+                if (statusLeads.length === 0) {
+                    column.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">No leads</div></div>';
+                } else {
+                    statusLeads.forEach(lead => {
+                        const card = createLeadCard(lead);
+                        column.appendChild(card);
+                    });
+                }
+            });
+        }
+
+        // Create Lead Card Element
+        function createLeadCard(lead) {
+            const card = document.createElement('div');
+            card.className = 'lead-card';
+            card.draggable = true;
+            card.dataset.leadId = lead.id;
+            card.onclick = () => openLeadModal(lead.id);
+            card.ondragstart = drag;
+
+            const heatTier = getHeatTier(lead.heatScore || 0);
+            const qualGrade = lead.qualificationGrade || 'F';
+
+            card.innerHTML = `
+                <div class="lead-card-header">
+                    <div class="lead-name">${lead.firstName} ${lead.lastName}</div>
+                    <div class="lead-scores">
+                        <span class="score-badge score-${heatTier.toLowerCase()}">${heatTier}</span>
+                        <span class="score-badge qual-${qualGrade.toLowerCase()}">${qualGrade}</span>
+                    </div>
+                </div>
+                <div class="lead-info">
+                    <div class="lead-info-row">
+                        <span>📞 ${lead.phone || 'N/A'}</span>
+                    </div>
+                    <div class="lead-info-row">
+                        <span>💰 $${(lead.totalDebt || 0).toLocaleString()}</span>
+                        <span>Close: ${lead.closeProbability || 0}%</span>
+                    </div>
+                </div>
+                ${lead.tags && lead.tags.length > 0 ? `
+                    <div class="lead-tags">
+                        ${lead.tags.slice(0, 3).map(tag => `<span class="tag">${tag}</span>`).join('')}
+                    </div>
+                ` : ''}
+                <div class="lead-footer">
+                    <span class="assigned-agent">${lead.assignedToName || 'Unassigned'}</span>
+                    <span>${formatDate(lead.lastContactedAt || lead.createdAt)}</span>
+                </div>
+            `;
+
+            return card;
+        }
+
+        // Render List View
+        function renderListView() {
+            const tbody = document.getElementById('listTableBody');
+            tbody.innerHTML = '';
+
+            if (filteredLeads.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px; color: #999;">No leads found</td></tr>';
+                return;
+            }
+
+            filteredLeads.forEach(lead => {
+                const row = document.createElement('tr');
+                row.onclick = () => openLeadModal(lead.id);
+
+                const heatTier = getHeatTier(lead.heatScore || 0);
+                const qualGrade = lead.qualificationGrade || 'F';
+
+                row.innerHTML = `
+                    <td><strong>${lead.firstName} ${lead.lastName}</strong><br><small>${lead.email || ''}</small></td>
+                    <td><span class="status-badge status-${lead.status}">${lead.status}</span></td>
+                    <td>$${(lead.totalDebt || 0).toLocaleString()}</td>
+                    <td><span class="score-badge score-${heatTier.toLowerCase()}">${heatTier} ${lead.heatScore || 0}</span></td>
+                    <td><span class="score-badge qual-${qualGrade.toLowerCase()}">${qualGrade} ${lead.qualificationScore || 0}</span></td>
+                    <td><strong>${lead.closeProbability || 0}%</strong></td>
+                    <td>${lead.assignedToName || 'Unassigned'}</td>
+                    <td>${formatDate(lead.lastContactedAt || lead.createdAt)}</td>
+                `;
+
+                tbody.appendChild(row);
+            });
+        }
+
+        // Get Heat Tier
+        function getHeatTier(score) {
+            if (score >= 80) return 'HOT';
+            if (score >= 60) return 'WARM';
+            if (score >= 40) return 'COOL';
+            return 'COLD';
+        }
+
+        // Format Date
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+
+            if (diffMins < 60) return `${diffMins}m ago`;
+            if (diffHours < 24) return `${diffHours}h ago`;
+            if (diffDays < 7) return `${diffDays}d ago`;
+            return date.toLocaleDateString();
+        }
+
+        // Switch View
+        function switchView(view) {
+            document.querySelectorAll('.view-toggle button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`[data-view="${view}"]`).classList.add('active');
+
+            if (view === 'pipeline') {
+                document.getElementById('pipelineView').style.display = 'flex';
+                document.getElementById('listView').classList.remove('active');
+            } else {
+                document.getElementById('pipelineView').style.display = 'none';
+                document.getElementById('listView').classList.add('active');
+            }
+        }
+
+        // Filter Leads
+        function filterLeads() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const assignedFilter = document.getElementById('assignedFilter').value;
+            const heatFilter = document.getElementById('heatFilter').value;
+            const qualFilter = document.getElementById('qualFilter').value;
+            const sortBy = document.getElementById('sortFilter').value;
+
+            filteredLeads = allLeads.filter(lead => {
+                // Search filter
+                const matchesSearch = !searchTerm ||
+                    lead.firstName.toLowerCase().includes(searchTerm) ||
+                    lead.lastName.toLowerCase().includes(searchTerm) ||
+                    (lead.email && lead.email.toLowerCase().includes(searchTerm)) ||
+                    (lead.phone && lead.phone.includes(searchTerm));
+
+                // Assigned filter
+                let matchesAssigned = true;
+                if (assignedFilter === 'unassigned') {
+                    matchesAssigned = !lead.assignedTo;
+                } else if (assignedFilter === 'me' && currentUser) {
+                    matchesAssigned = lead.assignedTo === currentUser.id;
+                } else if (assignedFilter) {
+                    matchesAssigned = lead.assignedTo === assignedFilter;
+                }
+
+                // Heat filter
+                let matchesHeat = true;
+                if (heatFilter) {
+                    const heatScore = lead.heatScore || 0;
+                    if (heatFilter === 'hot') matchesHeat = heatScore >= 80;
+                    else if (heatFilter === 'warm') matchesHeat = heatScore >= 60 && heatScore < 80;
+                    else if (heatFilter === 'cool') matchesHeat = heatScore >= 40 && heatScore < 60;
+                    else if (heatFilter === 'cold') matchesHeat = heatScore < 40;
+                }
+
+                // Qual filter
+                let matchesQual = true;
+                if (qualFilter) {
+                    matchesQual = (lead.qualificationGrade || 'F') === qualFilter;
+                }
+
+                return matchesSearch && matchesAssigned && matchesHeat && matchesQual;
+            });
+
+            // Sort
+            filteredLeads.sort((a, b) => {
+                const aVal = a[sortBy] || 0;
+                const bVal = b[sortBy] || 0;
+                return bVal - aVal; // Descending
+            });
+
+            renderPipelineView();
+            renderListView();
+        }
+
+        // Drag and Drop Functions
+        function allowDrop(ev) {
+            ev.preventDefault();
+        }
+
+        function drag(ev) {
+            ev.dataTransfer.setData("leadId", ev.target.dataset.leadId);
+            ev.target.classList.add('dragging');
+        }
+
+        async function drop(ev) {
+            ev.preventDefault();
+            const leadId = ev.dataTransfer.getData("leadId");
+            const newStatus = ev.currentTarget.id.replace('column-', '');
+
+            document.querySelector('.dragging')?.classList.remove('dragging');
+
+            // Update lead status
+            try {
+                const response = await fetch(`/api/leads/${leadId}/status`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: newStatus })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Reload leads
+                    await loadLeads();
+                }
+            } catch (error) {
+                console.error('Error updating lead status:', error);
+                alert('Failed to update lead status');
+            }
+        }
+
+        // Open Lead Modal
+        async function openLeadModal(leadId) {
+            const modal = document.getElementById('leadModal');
+            const modalBody = document.getElementById('modalBody');
+            const modalTitle = document.getElementById('modalTitle');
+
+            try {
+                const response = await fetch(`/api/leads/${leadId}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    const lead = data.lead;
+                    modalTitle.textContent = `${lead.firstName} ${lead.lastName}`;
+
+                    modalBody.innerHTML = `
+                        <p><strong>Email:</strong> ${lead.email || 'N/A'}</p>
+                        <p><strong>Phone:</strong> ${lead.phone || 'N/A'}</p>
+                        <p><strong>Total Debt:</strong> $${(lead.totalDebt || 0).toLocaleString()}</p>
+                        <p><strong>Status:</strong> ${lead.status}</p>
+                        <p><strong>Close Probability:</strong> ${lead.closeProbability || 0}%</p>
+                        <p><strong>Assigned To:</strong> ${lead.assignedToName || 'Unassigned'}</p>
+                        <hr>
+                        <button class="btn btn-primary" onclick="window.location.href='/lead/${leadId}'">View Full Details</button>
+                    `;
+
+                    modal.classList.add('active');
+                }
+            } catch (error) {
+                console.error('Error loading lead:', error);
+            }
+        }
+
+        // Close Modal
+        function closeModal() {
+            document.getElementById('leadModal').classList.remove('active');
+        }
+
+        // Create New Lead
+        function createNewLead() {
+            window.location.href = '/lead/new';
+        }
+
+        // Bulk Assign Leads
+        function bulkAssignLeads() {
+            alert('Bulk assignment feature coming soon!');
+        }
+
+        // Initialize
+        window.addEventListener('DOMContentLoaded', () => {
+            loadCurrentUser();
+            loadLeads();
+        });
+
+        // Close modal on background click
+        document.getElementById('leadModal').onclick = function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        };
+    </script>
+</body>
+</html>

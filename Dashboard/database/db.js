@@ -1140,6 +1140,50 @@ class Database {
 
         return this.updateLead(leadId, { heatScore });
     }
+
+    // Update qualification score and close probability
+    updateLeadScoring(leadId) {
+        const lead = this.getLead(leadId);
+        if (!lead) return { success: false, error: 'Lead not found' };
+
+        const LeadScoring = require('../utils/lead-scoring');
+        const scorer = new LeadScoring(lead);
+        const analysis = scorer.analyze();
+
+        return this.updateLead(leadId, {
+            qualificationScore: analysis.qualification.totalScore,
+            closeProbability: analysis.closeProbability.probability,
+            pitchAngle: analysis.pitchAngle.primaryAngle,
+            estimatedMonthlyPayment: analysis.estimatedMonthlyPayment
+        });
+    }
+
+    // Get priority leads (sorted by close probability)
+    getPriorityLeads(limit = 20) {
+        const leads = this.loadData(this.leadsFile) || [];
+
+        // Filter active leads only
+        const activeLeads = leads.filter(l =>
+            l.status !== 'dead' &&
+            l.status !== 'enrolled' &&
+            l.status !== 'archived'
+        );
+
+        // Sort by close probability (descending)
+        const sorted = activeLeads.sort((a, b) => {
+            const probA = a.closeProbability || 0;
+            const probB = b.closeProbability || 0;
+
+            // If same probability, sort by heat score
+            if (probA === probB) {
+                return (b.heatScore || 0) - (a.heatScore || 0);
+            }
+
+            return probB - probA;
+        });
+
+        return sorted.slice(0, limit);
+    }
 }
 
 module.exports = Database;
