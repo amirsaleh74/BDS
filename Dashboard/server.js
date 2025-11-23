@@ -804,6 +804,80 @@ app.post('/api/calculator/settlement', async (req, res) => {
 });
 
 // ===========================================
+// AI EMAIL WRITER ROUTES
+// ===========================================
+
+// Route: Generate AI email for a lead
+app.post('/api/leads/:leadId/generate-email', verifyToken, (req, res) => {
+    try {
+        const { leadId } = req.params;
+        const { emailType, options } = req.body;
+
+        const lead = db.getLead(leadId);
+
+        if (!lead) {
+            return res.status(404).json({
+                success: false,
+                error: 'Lead not found'
+            });
+        }
+
+        const AIEmailWriter = require('./utils/ai-email-writer');
+        const EmailTracker = require('./utils/email-tracker');
+
+        const writer = new AIEmailWriter(db);
+        const tracker = new EmailTracker(db);
+
+        // Generate tracking pixel
+        const tracking = tracker.generateTrackingPixel(leadId, emailType || 'general');
+
+        // Prepare options with tracking links
+        const emailOptions = {
+            ...options,
+            agentName: options?.agentName || req.user.username,
+            calculatorUrl: tracker.generateTrackedLink(tracking.trackingId, 'http://localhost:3000/calculator', 'calculator'),
+            scheduleUrl: tracker.generateTrackedLink(tracking.trackingId, 'http://localhost:3000/schedule-call', 'schedule_consultation')
+        };
+
+        // Generate email
+        const email = writer.generateEmail(lead, emailType || 'welcome', emailOptions);
+
+        // Add tracking pixel to body
+        const completeEmail = {
+            ...email,
+            body: email.body + '\n\n' + tracking.pixelHtml,
+            trackingId: tracking.trackingId
+        };
+
+        res.json({
+            success: true,
+            email: completeEmail
+        });
+    } catch (error) {
+        console.error('Email generation error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Route: Get available email types
+app.get('/api/email-templates/types', verifyToken, (req, res) => {
+    try {
+        const AIEmailWriter = require('./utils/ai-email-writer');
+        const writer = new AIEmailWriter(db);
+
+        const types = writer.getAvailableEmailTypes();
+
+        res.json({
+            success: true,
+            types: types
+        });
+    } catch (error) {
+        console.error('Email types error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ===========================================
 // EMAIL TRACKING ROUTES
 // ===========================================
 
